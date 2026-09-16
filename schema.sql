@@ -115,6 +115,15 @@ create table if not exists bloqueios (
   criado_em timestamptz not null default now()
 );
 
+create table if not exists google_tokens (
+  id int primary key default 1,
+  refresh_token text,
+  access_token text,
+  access_token_expiry timestamptz,
+  connected_email text,
+  updated_em timestamptz not null default now()
+);
+
 create index if not exists idx_pessoas_superior on pessoas(superior_id);
 create index if not exists idx_pessoas_unidade on pessoas(unidade_id);
 create index if not exists idx_vagas_unidade on vagas(unidade_id);
@@ -130,3 +139,4 @@ alter table candidatos enable row level security;
 alter table entrevistas enable row level security;
 alter table links_convite enable row level security;
 alter table bloqueios enable row level security;
+alter table google_tokens enable row level security;

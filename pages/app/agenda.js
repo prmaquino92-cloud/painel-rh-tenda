@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
 import { getEntrevistasAgendadas, getBloqueios } from '../../lib/data';
+import { getGoogleStatus } from '../../lib/google';
 import { DIA_SEMANA_LABEL, fmtData } from '../../lib/domain';
 import { Icon } from '../../components/icons';
 
@@ -13,17 +14,27 @@ function isProximos7(iso) {
   return diff >= 0 && diff <= 7;
 }
 
-export default function Agenda({ entrevistas, bloqueios }) {
+export default function Agenda({ entrevistas, bloqueios, googleConectado }) {
   const [showForm, setShowForm] = useState(false);
   const [tipo, setTipo] = useState('pontual');
 
   return (
     <Layout active="agenda" crumb="Recrutamento" title="Agenda de entrevistas">
-      <div className="note" style={{ marginBottom: 18 }}>
+      <div className="note" style={{ marginBottom: 18, borderColor: googleConectado ? 'var(--success)' : undefined }}>
         {Icon.warn({ className: 'ic' })}
         <div>
-          Assim que a integração com o Google Agenda (prmaquino92@gmail.com) estiver autorizada, um horário só é oferecido ao candidato se
-          estiver dentro da janela da vaga, <b>livre na sua Google Agenda</b> e <b>não estiver bloqueado manualmente</b> aqui embaixo.
+          {googleConectado ? (
+            <>
+              Google Agenda conectado: um horário só é oferecido ao candidato se estiver dentro da janela da vaga, <b>livre na sua Google Agenda</b>{' '}
+              e <b>não estiver bloqueado manualmente</b> aqui embaixo.
+            </>
+          ) : (
+            <>
+              A integração com o Google Agenda (prmaquino92@gmail.com) ainda não foi autorizada — conecte em{' '}
+              <a href="/app/integracoes">Integrações</a> para que os horários oferecidos ao candidato cruzem com sua agenda real e cada entrevista
+              já crie o evento com Google Meet automaticamente.
+            </>
+          )}
         </div>
       </div>
 
@@ -211,6 +222,6 @@ export default function Agenda({ entrevistas, bloqueios }) {
 export async function getServerSideProps(context) {
   const redirect = requireAuth(context);
   if (redirect) return redirect;
-  const [entrevistas, bloqueios] = await Promise.all([getEntrevistasAgendadas(), getBloqueios()]);
-  return { props: { entrevistas, bloqueios } };
+  const [entrevistas, bloqueios, google] = await Promise.all([getEntrevistasAgendadas(), getBloqueios(), getGoogleStatus()]);
+  return { props: { entrevistas, bloqueios, googleConectado: google.conectado } };
 }

@@ -25,6 +25,7 @@ export default function Candidatura({ vaga }) {
   const [slotHora, setSlotHora] = useState('');
   const [slotLabel, setSlotLabel] = useState('');
   const [concluido, setConcluido] = useState(false);
+  const [meetLink, setMeetLink] = useState('');
 
   useEffect(() => {
     if (step === 2 && vaga && !dias && !carregandoSlots) {
@@ -128,6 +129,7 @@ export default function Candidatura({ vaga }) {
         setEnviando(false);
         return;
       }
+      setMeetLink(json.meetLink || '');
       setConcluido(true);
     } catch {
       setErro('Falha de conexão. Verifique sua internet e tente novamente.');
@@ -162,9 +164,19 @@ export default function Candidatura({ vaga }) {
             {Icon.meet({ className: 'ic' })}
             <div>
               <b style={{ display: 'block', fontSize: 13 }}>Entrevista por videoconferência</b>
-              <span style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
-                O link do Google Meet será enviado para {form.email || 'o contato informado'} antes do horário marcado.
-              </span>
+              {meetLink ? (
+                <span style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
+                  Link do Google Meet:{' '}
+                  <a href={meetLink} target="_blank" rel="noreferrer">
+                    {meetLink}
+                  </a>
+                  {form.email ? ' · também enviamos um convite para seu e-mail.' : ''}
+                </span>
+              ) : (
+                <span style={{ fontSize: 12, color: 'var(--ink-soft)' }}>
+                  O link do Google Meet será enviado para {form.email || 'o contato informado'} antes do horário marcado.
+                </span>
+              )}
             </div>
           </div>
         </div>
