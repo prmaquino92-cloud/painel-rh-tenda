@@ -32,12 +32,91 @@ function OrgColuna({ titulo, lista, unidadeNome }) {
   );
 }
 
-export default function Hierarquia({ pessoas, unidades }) {
+function EditarPessoaForm({ pessoa, pessoas, unidades, onCancel }) {
+  return (
+    <tr>
+      <td colSpan={6} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+        <form method="POST" action={`/api/pessoas/${pessoa.id}/update`} style={{ padding: '14px 16px' }}>
+          <div className="field-row">
+            <div className="field">
+              <label>Nome completo</label>
+              <input type="text" name="nome" defaultValue={pessoa.nome} required />
+            </div>
+            <div className="field">
+              <label>Status</label>
+              <select name="status" defaultValue={pessoa.status}>
+                <option value="ativo">Ativo</option>
+                <option value="convite_pendente">Convite pendente</option>
+              </select>
+            </div>
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label>E-mail</label>
+              <input type="email" name="email" defaultValue={pessoa.email || ''} />
+            </div>
+            <div className="field">
+              <label>Telefone</label>
+              <input type="tel" name="telefone" defaultValue={pessoa.telefone || ''} />
+            </div>
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label>Papel na hierarquia</label>
+              <select name="papel" defaultValue={pessoa.papel}>
+                {PAPEL_ORDEM.map((p) => (
+                  <option key={p} value={p}>
+                    {PAPEL_LABEL[p]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Superior direto</label>
+              <select name="superior_id" defaultValue={pessoa.superior_id || ''}>
+                <option value="">Nenhum (topo da hierarquia)</option>
+                {pessoas
+                  .filter((p) => p.id !== pessoa.id)
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome} · {PAPEL_LABEL[p.papel]}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </div>
+          <div className="field">
+            <label>Unidade</label>
+            <select name="unidade_id" defaultValue={pessoa.unidade_id || ''}>
+              <option value="">Toda a operação</option>
+              {unidades.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Salvar alterações
+            </button>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
+export default function Hierarquia({ pessoas, unidades, erro }) {
   const [showPessoa, setShowPessoa] = useState(false);
   const [showLink, setShowLink] = useState(false);
   const [busca, setBusca] = useState('');
   const [filtroPapel, setFiltroPapel] = useState('');
   const [filtroUnidade, setFiltroUnidade] = useState('');
+  const [editandoId, setEditandoId] = useState(null);
 
   const unidadeNome = (id) => unidades.find((u) => u.id === id)?.nome || '—';
   const pessoaById = (id) => pessoas.find((p) => p.id === id);
@@ -51,6 +130,11 @@ export default function Hierarquia({ pessoas, unidades }) {
 
   return (
     <Layout active="hierarquia" crumb="Cadastros únicos" title="Hierarquia & Pessoas">
+      {erro ? (
+        <div className="note" style={{ marginBottom: 16 }}>
+          Não foi possível salvar. Confira o nome, o papel e se o superior escolhido é válido, e tente de novo.
+        </div>
+      ) : null}
       <div className="toolbar" style={{ justifyContent: 'space-between' }}>
         <p style={{ fontSize: 12.8, color: 'var(--ink-soft)', maxWidth: 520 }}>
           Coordenador → Supervisores → Gerente Comercial → Equipe de vendas. A visibilidade de cada pessoa segue essa cadeia.
@@ -217,11 +301,15 @@ export default function Hierarquia({ pessoas, unidades }) {
                   <th>Superior</th>
                   <th>Unidade</th>
                   <th>Status</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
                 {filtradas.map((p) => {
                   const sup = p.superior_id ? pessoaById(p.superior_id) : null;
+                  if (editandoId === p.id) {
+                    return <EditarPessoaForm key={p.id} pessoa={p} pessoas={pessoas} unidades={unidades} onCancel={() => setEditandoId(null)} />;
+                  }
                   return (
                     <tr key={p.id}>
                       <td>
@@ -249,6 +337,11 @@ export default function Hierarquia({ pessoas, unidades }) {
                           </span>
                         )}
                       </td>
+                      <td>
+                        <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEditandoId(p.id)}>
+                          Editar
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -265,5 +358,5 @@ export async function getServerSideProps(context) {
   const redirect = requireAuth(context);
   if (redirect) return redirect;
   const [pessoas, unidades] = await Promise.all([getPessoas(), getUnidades()]);
-  return { props: { pessoas, unidades } };
+  return { props: { pessoas, unidades, erro: context.query.erro === '1' } };
 }
