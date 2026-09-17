@@ -94,6 +94,107 @@ function ImportarLeads() {
   );
 }
 
+function LimparDuplicados() {
+  const [checando, setChecando] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  async function checar() {
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const r = await fetch('/api/leads/limpar-duplicados', { method: 'GET' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível verificar duplicados.');
+      } else {
+        setRelatorio(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function excluir() {
+    if (!relatorio) return;
+    const ok = window.confirm(
+      `Isso vai excluir ${relatorio.linhasQueSeriamExcluidas} lead(s) duplicado(s), mantendo ${relatorio.linhasQueSeriamMantidas}. Essa ação não pode ser desfeita. Confirma?`
+    );
+    if (!ok) return;
+    setExcluindo(true);
+    setErro('');
+    try {
+      const r = await fetch('/api/leads/limpar-duplicados', { method: 'POST' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível excluir os duplicados.');
+      } else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setExcluindo(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Verifica leads com o mesmo telefone e o mesmo nome cadastrados mais de uma vez (ex: reimportação da mesma planilha) e mantém
+          só 1 de cada — dando preferência ao que já está mais avançado no funil. Leads onde o mesmo telefone tem nomes diferentes não
+          são tocados.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-outline btn-sm" type="button" onClick={checar} disabled={checando || excluindo}>
+            {checando ? 'Verificando...' : 'Verificar duplicados'}
+          </button>
+          {relatorio ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={excluir} disabled={excluindo}>
+              {excluindo ? 'Excluindo...' : `Excluir ${relatorio.linhasQueSeriamExcluidas} duplicado(s)`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              {relatorio.gruposDuplicados} grupo(s) duplicado(s) encontrado(s) — {relatorio.linhasQueSeriamExcluidas} linha(s) seriam
+              excluídas, mantendo {relatorio.linhasQueSeriamMantidas}. Total de leads hoje: {relatorio.totalLeads}.
+            </div>
+            {relatorio.gruposAmbiguosIgnorados?.length ? (
+              <div style={{ marginTop: 6 }}>
+                {relatorio.gruposAmbiguosIgnorados.length} telefone(s) com nomes diferentes foram ignorados (revisar manualmente):
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                  {relatorio.gruposAmbiguosIgnorados.map((a) => (
+                    <li key={a.telefone}>
+                      {a.telefone}: {a.nomes.join(' / ')}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.linhasExcluidas} lead(s) duplicado(s) excluído(s) com sucesso. Recarregue a página pra ver os números
+            atualizados.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function EvoluirForm({ lead, vagas, onCancel }) {
   return (
     <tr>
@@ -157,6 +258,7 @@ function TimelineLead({ eventos }) {
 export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro }) {
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showLimpar, setShowLimpar] = useState(false);
   const [evoluindoId, setEvoluindoId] = useState(null);
   const [timelineId, setTimelineId] = useState(null);
 
@@ -204,6 +306,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
           <button className="btn btn-outline" onClick={() => setShowImport((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Importar planilha
           </button>
+          <button className="btn btn-outline" onClick={() => setShowLimpar((v) => !v)}>
+            {Icon.plus({ className: 'ic' })} Remover duplicados
+          </button>
           <button className="btn btn-primary" onClick={() => setShowForm((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Cadastrar lead
           </button>
@@ -211,6 +316,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
       </div>
 
       {showImport ? <ImportarLeads /> : null}
+      {showLimpar ? <LimparDuplicados /> : null}
 
       {showForm ? (
         <div className="card form-card" style={{ marginTop: 16 }}>
