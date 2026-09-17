@@ -1,6 +1,9 @@
 import { supabaseAdmin } from '../../../lib/supabase';
-import { diasUteisDisponiveis, gerarHorarios, isSlotBloqueado } from '../../../lib/domain';
+import { diasUteisDisponiveis, gerarHorarios, isSlotBloqueado, hhmmToMin, agoraSaoPaulo } from '../../../lib/domain';
 import { getBusyIntervals } from '../../../lib/google';
+
+// candidato não pode marcar um horário daqui a poucos minutos — exige pelo menos 1h de antecedência
+const ANTECEDENCIA_MIN = 60;
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -21,8 +24,16 @@ export default async function handler(req, res) {
     db.from('entrevistas').select('data,hora'),
   ]);
 
-  const dias = diasUteisDisponiveis(vaga.agenda?.diasSemana || [1, 2, 3, 4, 5], 4);
+  const diasSemanaVaga = vaga.agenda?.diasSemana || [1, 2, 3, 4, 5];
   const horarios = gerarHorarios(vaga.agenda?.inicio || '09:00', vaga.agenda?.fim || '17:30').slice(0, 6);
+
+  const agora = agoraSaoPaulo();
+  const hojeIso = agora.toISOString().slice(0, 10);
+  const minutosAgora = agora.getUTCHours() * 60 + agora.getUTCMinutes();
+  const hojeTemHorarioValido =
+    diasSemanaVaga.includes(agora.getUTCDay()) && horarios.some((h) => hhmmToMin(h) >= minutosAgora + ANTECEDENCIA_MIN);
+
+  const dias = diasUteisDisponiveis(diasSemanaVaga, 4, undefined, hojeTemHorarioValido);
 
   // cruza com a disponibilidade real da agenda do Google (se conectada) — janela do primeiro
   // ao último dia candidato, cobrindo do início ao fim do expediente.
@@ -47,17 +58,20 @@ export default async function handler(req, res) {
     });
   }
 
-  const resultado = dias.map((d) => ({
-    iso: d.iso,
-    label: d.label,
-    weekday: d.weekday,
-    horarios: horarios.map((h) => {
-      const ocupado = (entrevistas || []).some((e) => e.data === d.iso && e.hora?.slice(0, 5) === h);
-      const bloqueado = !ocupado && isSlotBloqueado(bloqueios || [], d.iso, h);
-      const ocupadoGoogle = !ocupado && !bloqueado && ocupadoNoGoogle(d.iso, h);
-      return { hora: h, disponivel: !ocupado && !bloqueado && !ocupadoGoogle };
-    }),
-  }));
+  const resultado = dias.map((d) => {
+    const horariosDoDia = d.iso === hojeIso ? horarios.filter((h) => hhmmToMin(h) >= minutosAgora + ANTECEDENCIA_MIN) : horarios;
+    return {
+      iso: d.iso,
+      label: d.label,
+      weekday: d.weekday,
+      horarios: horariosDoDia.map((h) => {
+        const ocupado = (entrevistas || []).some((e) => e.data === d.iso && e.hora?.slice(0, 5) === h);
+        const bloqueado = !ocupado && isSlotBloqueado(bloqueios || [], d.iso, h);
+        const ocupadoGoogle = !ocupado && !bloqueado && ocupadoNoGoogle(d.iso, h);
+        return { hora: h, disponivel: !ocupado && !bloqueado && !ocupadoGoogle };
+      }),
+    };
+  });
 
   res.status(200).json({ dias: resultado });
 }
