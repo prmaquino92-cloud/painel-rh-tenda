@@ -2,13 +2,14 @@ import { useState } from 'react';
 import Link from 'next/link';
 import Layout from '../../../components/Layout';
 import { requireAuth } from '../../../lib/auth';
-import { getCandidato, getVaga, getPessoas, getUnidades } from '../../../lib/data';
+import { getCandidato, getVaga, getVagas, getPessoas, getUnidades } from '../../../lib/data';
 import { STATUS_CANDIDATO, FEEDBACK_DECISAO, initials, fmtData } from '../../../lib/domain';
-import { AvaliarForm, DefinirEquipeForm } from '../../../components/CandidatoForms';
+import { AvaliarForm, DefinirEquipeForm, VagaForm } from '../../../components/CandidatoForms';
 
-export default function FichaCandidato({ candidato, vaga, gerentes, unidades, pessoaCorretor, superior, erro }) {
+export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unidades, pessoaCorretor, superior, erro }) {
   const [avaliando, setAvaliando] = useState(false);
   const [definindoEquipe, setDefinindoEquipe] = useState(false);
+  const [definindoVaga, setDefinindoVaga] = useState(false);
 
   if (!candidato) {
     return (
@@ -61,13 +62,28 @@ export default function FichaCandidato({ candidato, vaga, gerentes, unidades, pe
           <div className="field-row" style={{ marginTop: 14, fontSize: 13 }}>
             <div>
               <div className="row-sub">Vaga</div>
-              <div>{vaga?.titulo || '—'}</div>
+              <div>{vaga?.titulo || <span style={{ color: 'var(--ink-faint)' }}>Ainda não definida</span>}</div>
+              {!definindoVaga ? (
+                <button
+                  className="btn btn-ghost btn-sm"
+                  type="button"
+                  style={{ padding: '2px 0', height: 'auto', fontSize: 11.5, marginTop: 2 }}
+                  onClick={() => setDefinindoVaga(true)}
+                >
+                  {vaga ? 'Alterar vaga' : 'Definir vaga'}
+                </button>
+              ) : null}
             </div>
             <div>
               <div className="row-sub">Recebido em</div>
               <div>{fmtData(candidato.criado_em?.slice(0, 10))}</div>
             </div>
           </div>
+          {definindoVaga ? (
+            <div style={{ marginTop: 10, background: 'var(--surface-2, #f7f7fa)', borderRadius: 10 }}>
+              <VagaForm candidato={candidato} vagas={vagas} onCancel={() => setDefinindoVaga(false)} />
+            </div>
+          ) : null}
           <div className="field-row" style={{ marginTop: 10, fontSize: 13 }}>
             <div>
               <div className="row-sub">Contato</div>
@@ -251,7 +267,7 @@ export async function getServerSideProps(context) {
   const redirect = requireAuth(context);
   if (redirect) return redirect;
   const { id } = context.params;
-  const [candidato, pessoas, unidades] = await Promise.all([getCandidato(id), getPessoas(), getUnidades()]);
+  const [candidato, pessoas, unidades, vagas] = await Promise.all([getCandidato(id), getPessoas(), getUnidades(), getVagas()]);
   if (!candidato) {
     return { props: { candidato: null, erro: context.query.erro === '1' } };
   }
@@ -263,6 +279,7 @@ export async function getServerSideProps(context) {
     props: {
       candidato,
       vaga: vaga || null,
+      vagas,
       gerentes,
       unidades,
       pessoaCorretor,

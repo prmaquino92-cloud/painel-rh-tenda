@@ -85,6 +85,38 @@ export function AvaliarForm({ candidato, gerentes, unidades, unidadeSugeridaId, 
   );
 }
 
+// Formulário para atribuir (ou trocar) a vaga de um candidato — usado principalmente para quem
+// entrou pelo link geral de candidatura (sem vaga_id) e precisa ser encaixado em uma vaga depois.
+export function VagaForm({ candidato, vagas, onCancel }) {
+  return (
+    <form method="POST" action={`/api/candidatos/${candidato.id}/definir-vaga`} style={{ padding: '14px 16px' }}>
+      <div className="field">
+        <label>Vaga</label>
+        <select name="vaga_id" defaultValue={candidato.vaga_id || ''} required>
+          <option value="" disabled>
+            Selecione
+          </option>
+          {vagas.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.titulo}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn btn-primary btn-sm" type="submit">
+          Salvar vaga
+        </button>
+        {onCancel ? (
+          <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
+            Cancelar
+          </button>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
 // Formulário de confirmação de contratação / equipe. Mesma ideia: sem wrapper de tabela fixo.
 export function DefinirEquipeForm({ candidato, gerentes, unidades, unidadeSugeridaId, onCancel }) {
   return (

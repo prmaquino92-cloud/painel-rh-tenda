@@ -4,7 +4,11 @@ import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
 import { getCandidatosComEntrevista, getVagas, getPessoas, getUnidades } from '../../lib/data';
 import { STATUS_CANDIDATO, FEEDBACK_DECISAO, initials, fmtData } from '../../lib/domain';
-import { AvaliarForm as AvaliarFormFields, DefinirEquipeForm as DefinirEquipeFormFields } from '../../components/CandidatoForms';
+import {
+  AvaliarForm as AvaliarFormFields,
+  DefinirEquipeForm as DefinirEquipeFormFields,
+  VagaForm as VagaFormFields,
+} from '../../components/CandidatoForms';
 
 function AvaliarForm(props) {
   return (
@@ -26,12 +30,23 @@ function DefinirEquipeForm(props) {
   );
 }
 
+function VagaForm(props) {
+  return (
+    <tr>
+      <td colSpan={7} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+        <VagaFormFields {...props} />
+      </td>
+    </tr>
+  );
+}
+
 export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro }) {
   const [busca, setBusca] = useState('');
   const [fStatus, setFStatus] = useState('');
   const [fVaga, setFVaga] = useState('');
   const [equipeId, setEquipeId] = useState(null);
   const [avaliarId, setAvaliarId] = useState(null);
+  const [vagaFormId, setVagaFormId] = useState(null);
   const vagaTitulo = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
   const vagaById = (id) => vagas.find((v) => v.id === id);
   const pessoaById = (id) => pessoas.find((p) => p.id === id);
@@ -125,6 +140,9 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                       />
                     );
                   }
+                  if (vagaFormId === c.id) {
+                    return <VagaForm key={c.id} candidato={c} vagas={vagas} onCancel={() => setVagaFormId(null)} />;
+                  }
                   return (
                     <tr key={c.id}>
                       <td>
@@ -138,7 +156,25 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                           </div>
                         </Link>
                       </td>
-                      <td>{vagaTitulo(c.vaga_id)}</td>
+                      <td>
+                        {c.vaga_id ? (
+                          <>
+                            <div>{vagaTitulo(c.vaga_id)}</div>
+                            <button
+                              className="btn btn-ghost btn-sm"
+                              type="button"
+                              style={{ padding: '2px 0', height: 'auto', fontSize: 11.5 }}
+                              onClick={() => setVagaFormId(c.id)}
+                            >
+                              Alterar vaga
+                            </button>
+                          </>
+                        ) : (
+                          <button className="btn btn-outline btn-sm" type="button" onClick={() => setVagaFormId(c.id)}>
+                            Definir vaga
+                          </button>
+                        )}
+                      </td>
                       <td>
                         {c.entrevista ? (
                           `${fmtData(c.entrevista.data)} · ${c.entrevista.hora?.slice(0, 5)}`

@@ -1,0 +1,118 @@
+import { supabaseAdmin } from '../../../lib/supabase';
+import { isSlotBloqueado } from '../../../lib/domain';
+import { criarEventoComMeet, getBusyIntervals } from '../../../lib/google';
+
+// Versão do /api/public/candidatura que não exige uma vaga — usada pelo link genérico
+// (/p/candidatura/geral). O candidato entra com vaga_id nulo; Pedro define a vaga depois,
+// pelo painel de Candidatos, sem precisar reenviar um link específico pra cada pessoa.
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'method not allowed' });
+    return;
+  }
+  const b = req.body || {};
+  const { nome, idade, cep, estado, municipio, telefone, email, linkedin, instagram, facebook, iso, hora } = b;
+
+  if (!nome || !iso || !hora) {
+    res.status(400).json({ error: 'Dados incompletos.' });
+    return;
+  }
+
+  const db = supabaseAdmin();
+
+  // revalida disponibilidade no servidor antes de gravar (evita corrida entre dois candidatos)
+  const [{ data: bloqueios }, { data: jaOcupado }] = await Promise.all([
+    db.from('bloqueios').select('*'),
+    db.from('entrevistas').select('id').eq('data', iso).eq('hora', hora).maybeSingle(),
+  ]);
+
+  if (jaOcupado || isSlotBloqueado(bloqueios || [], iso, hora)) {
+    res.status(409).json({ error: 'Esse horário acabou de ficar indisponível. Escolha outro.' });
+    return;
+  }
+
+  // revalida também contra a agenda real do Google (se conectada)
+  try {
+    const slotStart = new Date(`${iso}T${hora}:00-03:00`);
+    const slotEnd = new Date(slotStart.getTime() + 30 * 60000);
+    const busy = await getBusyIntervals(slotStart.toISOString(), slotEnd.toISOString());
+    const conflita = (busy || []).some((bloco) => {
+      const bs = new Date(bloco.start).getTime();
+      const be = new Date(bloco.end).getTime();
+      return slotStart.getTime() < be && slotEnd.getTime() > bs;
+    });
+    if (conflita) {
+      res.status(409).json({ error: 'Esse horário acabou de ficar indisponível. Escolha outro.' });
+      return;
+    }
+  } catch {
+    // se a checagem no Google falhar, segue com a validação local (não bloqueia o candidato)
+  }
+
+  const { data: candidato, error: candErr } = await db
+    .from('candidatos')
+    .insert({
+      nome,
+      idade: idade ? Number(idade) : null,
+      cidade: municipio || null,
+      estado: estado || null,
+      cep: cep || null,
+      telefone: telefone || null,
+      email: email || null,
+      linkedin: linkedin || null,
+      instagram: instagram || null,
+      facebook: facebook || null,
+      vaga_id: null,
+      status: 'entrevista_agendada',
+    })
+    .select()
+    .single();
+
+  if (candErr) {
+    res.status(500).json({ error: candErr.message });
+    return;
+  }
+
+  const { data: entrevista, error: entErr } = await db
+    .from('entrevistas')
+    .insert({
+      candidato_id: candidato.id,
+      vaga_id: null,
+      data: iso,
+      hora,
+      status: 'agendada',
+    })
+    .select()
+    .single();
+
+  if (entErr) {
+    res.status(500).json({ error: entErr.message });
+    return;
+  }
+
+  // cria o evento com Google Meet — melhor esforço: se falhar ou o Google não estiver
+  // conectado, a entrevista já está agendada mesmo assim, só sem o link automático.
+  let meetLink = null;
+  try {
+    const evento = await criarEventoComMeet({
+      titulo: `Entrevista Tenda Vendas · ${nome}`,
+      descricao: 'Entrevista agendada pelo link geral de candidatura da Tenda Vendas. Vaga ainda a definir.',
+      iso,
+      hora,
+      duracaoMin: 30,
+      attendeeEmail: email || null,
+      attendeeNome: nome,
+    });
+    if (evento) {
+      meetLink = evento.meetLink;
+      await db
+        .from('entrevistas')
+        .update({ google_event_id: evento.eventId, meet_link: evento.meetLink })
+        .eq('id', entrevista.id);
+    }
+  } catch (e) {
+    console.error('Erro ao criar evento no Google Agenda:', e.message);
+  }
+
+  res.status(200).json({ ok: true, meetLink });
+}

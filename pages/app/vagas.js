@@ -5,12 +5,13 @@ import { requireAuth } from '../../lib/auth';
 import { getVagas, getUnidades, getPessoas, getCandidatosComEntrevista } from '../../lib/data';
 import { Icon } from '../../components/icons';
 
-export default function Vagas({ vagas, unidades, pessoas, candidatos }) {
+export default function Vagas({ vagas, unidades, pessoas, candidatos, baseUrl }) {
   const [showForm, setShowForm] = useState(false);
   const unidadeNome = (id) => unidades.find((u) => u.id === id)?.nome || '—';
   const pessoaNome = (id) => pessoas.find((p) => p.id === id)?.nome || '—';
   const ativas = vagas.filter((v) => v.status === 'ativa');
   const gerentes = pessoas.filter((p) => p.papel === 'gerente_comercial');
+  const linkGeral = `${baseUrl}/p/candidatura/geral`;
 
   return (
     <Layout active="vagas" crumb="Cadastros únicos" title="Vagas">
@@ -21,6 +22,17 @@ export default function Vagas({ vagas, unidades, pessoas, candidatos }) {
         <button className="btn btn-primary" onClick={() => setShowForm((v) => !v)}>
           {Icon.plus({ className: 'ic' })} Criar vaga
         </button>
+      </div>
+
+      <div className="section-head" style={{ marginTop: 16 }}>
+        <h2>Link geral de candidatura</h2>
+        <p>Um único link para todos os candidatos, sem vaga fixa — depois de agendarem, defina a vaga de cada um em Candidatos</p>
+      </div>
+      <div className="link-box">
+        <code>{linkGeral}</code>
+        <a className="btn btn-outline btn-sm" href={linkGeral} target="_blank" rel="noreferrer">
+          Abrir
+        </a>
       </div>
 
       {showForm ? (
@@ -198,5 +210,7 @@ export async function getServerSideProps(context) {
   const redirect = requireAuth(context);
   if (redirect) return redirect;
   const [vagas, unidades, pessoas, candidatos] = await Promise.all([getVagas(), getUnidades(), getPessoas(), getCandidatosComEntrevista()]);
-  return { props: { vagas, unidades, pessoas, candidatos } };
+  const proto = context.req.headers['x-forwarded-proto'] || 'https';
+  const baseUrl = `${proto}://${context.req.headers.host}`;
+  return { props: { vagas, unidades, pessoas, candidatos, baseUrl } };
 }
