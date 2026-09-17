@@ -1,14 +1,63 @@
 import { useState } from 'react';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
-import { getCandidatosComEntrevista, getVagas } from '../../lib/data';
+import { getCandidatosComEntrevista, getVagas, getPessoas, getUnidades } from '../../lib/data';
 import { STATUS_CANDIDATO, initials, fmtData } from '../../lib/domain';
 
-export default function Candidatos({ candidatos, vagas }) {
+function DefinirEquipeForm({ candidato, gerentes, unidades, unidadeSugeridaId, onCancel }) {
+  return (
+    <tr>
+      <td colSpan={6} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+        <form method="POST" action={`/api/candidatos/${candidato.id}/definir-equipe`} style={{ padding: '14px 16px' }}>
+          <div className="field-row">
+            <div className="field">
+              <label>Equipe (gerente comercial)</label>
+              <select name="gerente_id" defaultValue="" required>
+                <option value="" disabled>
+                  Selecione
+                </option>
+                {gerentes.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Unidade</label>
+              <select name="unidade_id" defaultValue={unidadeSugeridaId || ''}>
+                <option value="">Toda a operação</option>
+                {unidades.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Salvar equipe
+            </button>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
+export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro }) {
   const [busca, setBusca] = useState('');
   const [fStatus, setFStatus] = useState('');
   const [fVaga, setFVaga] = useState('');
+  const [equipeId, setEquipeId] = useState(null);
   const vagaTitulo = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
+  const vagaById = (id) => vagas.find((v) => v.id === id);
+  const pessoaById = (id) => pessoas.find((p) => p.id === id);
+  const gerentes = pessoas.filter((p) => p.papel === 'gerente_comercial');
 
   const filtrados = candidatos.filter((c) => {
     if (busca && !(c.nome.toLowerCase().includes(busca.toLowerCase()) || (c.email || '').toLowerCase().includes(busca.toLowerCase()))) return false;
@@ -22,6 +71,11 @@ export default function Candidatos({ candidatos, vagas }) {
       <p style={{ fontSize: 12.8, color: 'var(--ink-soft)', maxWidth: 520 }}>
         Pipeline único, alimentado pelo formulário público de candidatura de cada vaga.
       </p>
+      {erro ? (
+        <div className="note" style={{ marginTop: 12 }}>
+          Não foi possível definir a equipe. Selecione um gerente comercial e tente de novo.
+        </div>
+      ) : null}
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-pad" style={{ paddingBottom: 0 }}>
           <div className="toolbar">
@@ -55,12 +109,27 @@ export default function Candidatos({ candidatos, vagas }) {
                   <th>Vaga</th>
                   <th>Entrevista</th>
                   <th>Status</th>
+                  <th>Equipe</th>
                   <th>Recebido</th>
                 </tr>
               </thead>
               <tbody>
                 {filtrados.map((c) => {
                   const st = STATUS_CANDIDATO[c.status];
+                  const pessoaCorretor = c.pessoa_id ? pessoaById(c.pessoa_id) : null;
+                  if (equipeId === c.id) {
+                    const vagaDaCandidatura = vagaById(c.vaga_id);
+                    return (
+                      <DefinirEquipeForm
+                        key={c.id}
+                        candidato={c}
+                        gerentes={gerentes}
+                        unidades={unidades}
+                        unidadeSugeridaId={pessoaCorretor?.unidade_id || vagaDaCandidatura?.unidade_id}
+                        onCancel={() => setEquipeId(null)}
+                      />
+                    );
+                  }
                   return (
                     <tr key={c.id}>
                       <td>
@@ -86,6 +155,22 @@ export default function Candidatos({ candidatos, vagas }) {
                           {st.label}
                         </span>
                       </td>
+                      <td>
+                        {pessoaCorretor ? (
+                          <div>
+                            <div className="row-title" style={{ fontSize: 12.8 }}>
+                              {pessoaById(pessoaCorretor.superior_id)?.nome || '—'}
+                            </div>
+                            <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEquipeId(c.id)}>
+                              Alterar equipe
+                            </button>
+                          </div>
+                        ) : (
+                          <button className="btn btn-outline btn-sm" type="button" onClick={() => setEquipeId(c.id)}>
+                            Definir equipe
+                          </button>
+                        )}
+                      </td>
                       <td className="row-sub">{fmtData(c.criado_em?.slice(0, 10))}</td>
                     </tr>
                   );
@@ -102,6 +187,6 @@ export default function Candidatos({ candidatos, vagas }) {
 export async function getServerSideProps(context) {
   const redirect = requireAuth(context);
   if (redirect) return redirect;
-  const [candidatos, vagas] = await Promise.all([getCandidatosComEntrevista(), getVagas()]);
-  return { props: { candidatos, vagas } };
+  const [candidatos, vagas, pessoas, unidades] = await Promise.all([getCandidatosComEntrevista(), getVagas(), getPessoas(), getUnidades()]);
+  return { props: { candidatos, vagas, pessoas, unidades, erro: context.query.erro === '1' } };
 }

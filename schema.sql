@@ -78,6 +78,7 @@ create table if not exists candidatos (
   curriculo_url text,
   vaga_id uuid references vagas(id) on delete set null,
   status status_candidato not null default 'inscrito',
+  pessoa_id uuid references pessoas(id) on delete set null,
   criado_em timestamptz not null default now()
 );
 
