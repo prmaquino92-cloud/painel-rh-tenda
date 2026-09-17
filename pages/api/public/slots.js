@@ -25,7 +25,9 @@ export default async function handler(req, res) {
   ]);
 
   const diasSemanaVaga = vaga.agenda?.diasSemana || [1, 2, 3, 4, 5];
-  const horarios = gerarHorarios(vaga.agenda?.inicio || '09:00', vaga.agenda?.fim || '17:30').slice(0, 6);
+  // toda a janela da vaga (não só as primeiras horas) — o grid de horários na tela do
+  // candidato já quebra linha sozinho, então oferecer o dia inteiro não estoura o layout.
+  const horarios = gerarHorarios(vaga.agenda?.inicio || '09:00', vaga.agenda?.fim || '17:30');
 
   const agora = agoraSaoPaulo();
   const hojeIso = agora.toISOString().slice(0, 10);
