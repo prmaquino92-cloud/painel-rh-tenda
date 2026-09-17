@@ -29,6 +29,10 @@ do $$ begin
   create type tipo_bloqueio as enum ('recorrente','pontual');
 exception when duplicate_object then null; end $$;
 
+do $$ begin
+  create type status_lead as enum ('novo','sem_contato','declinado','convertido');
+exception when duplicate_object then null; end $$;
+
 create table if not exists unidades (
   id uuid primary key default gen_random_uuid(),
   nome text not null,
@@ -63,6 +67,28 @@ create table if not exists vagas (
   criado_em timestamptz not null default now()
 );
 
+create table if not exists leads (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  telefone text,
+  email text,
+  localidade text,
+  vaga_id uuid references vagas(id) on delete set null,
+  status status_lead not null default 'novo',
+  token text unique,
+  criado_em timestamptz not null default now()
+);
+
+create table if not exists lead_eventos (
+  id uuid primary key default gen_random_uuid(),
+  lead_id uuid not null references leads(id) on delete cascade,
+  tipo text not null,
+  status_anterior text,
+  status_novo text,
+  observacao text,
+  criado_em timestamptz not null default now()
+);
+
 create table if not exists candidatos (
   id uuid primary key default gen_random_uuid(),
   nome text not null,
@@ -79,6 +105,7 @@ create table if not exists candidatos (
   vaga_id uuid references vagas(id) on delete set null,
   status status_candidato not null default 'inscrito',
   pessoa_id uuid references pessoas(id) on delete set null,
+  lead_id uuid references leads(id) on delete set null,
   criado_em timestamptz not null default now()
 );
 
@@ -129,8 +156,14 @@ create index if not exists idx_pessoas_superior on pessoas(superior_id);
 create index if not exists idx_pessoas_unidade on pessoas(unidade_id);
 create index if not exists idx_vagas_unidade on vagas(unidade_id);
 create index if not exists idx_candidatos_vaga on candidatos(vaga_id);
+create index if not exists idx_candidatos_lead on candidatos(lead_id);
 create index if not exists idx_entrevistas_candidato on entrevistas(candidato_id);
 create index if not exists idx_links_token on links_convite(token);
+create index if not exists idx_leads_vaga on leads(vaga_id);
+create index if not exists idx_leads_token on leads(token);
+create index if not exists idx_leads_status on leads(status);
+create index if not exists idx_lead_eventos_lead on lead_eventos(lead_id);
+create index if not exists idx_lead_eventos_criado on lead_eventos(criado_em);
 
 -- protege as tabelas: só o backend (chave secreta) acessa, nunca o navegador
 alter table unidades enable row level security;
@@ -141,3 +174,5 @@ alter table entrevistas enable row level security;
 alter table links_convite enable row level security;
 alter table bloqueios enable row level security;
 alter table google_tokens enable row level security;
+alter table leads enable row level security;
+alter table lead_eventos enable row level security;

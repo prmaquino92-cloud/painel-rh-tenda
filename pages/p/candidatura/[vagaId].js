@@ -1,18 +1,18 @@
 import { useState, useEffect } from 'react';
 import Head from 'next/head';
-import { getVaga } from '../../../lib/data';
+import { getVaga, getLeadByToken } from '../../../lib/data';
 import { Icon } from '../../../components/icons';
 
-export default function Candidatura({ vaga }) {
+export default function Candidatura({ vaga, leadToken, lead }) {
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
-    nome: '',
+    nome: lead?.nome || '',
     idade: '',
     cep: '',
     estado: '',
-    municipio: '',
-    telefone: '',
-    email: '',
+    municipio: lead?.localidade || '',
+    telefone: lead?.telefone || '',
+    email: lead?.email || '',
     linkedin: '',
     instagram: '',
     facebook: '',
@@ -113,6 +113,7 @@ export default function Candidatura({ vaga }) {
           facebook: form.facebook || null,
           iso: slotIso,
           hora: slotHora,
+          leadToken: leadToken || null,
         }),
       });
       const json = await r.json();
@@ -380,6 +381,7 @@ function PublicShell({ titulo, children }) {
 
 export async function getServerSideProps(context) {
   const { vagaId } = context.params;
-  const vaga = await getVaga(vagaId);
-  return { props: { vaga: vaga || null } };
+  const leadToken = typeof context.query.lead === 'string' ? context.query.lead : null;
+  const [vaga, lead] = await Promise.all([getVaga(vagaId), leadToken ? getLeadByToken(leadToken) : Promise.resolve(null)]);
+  return { props: { vaga: vaga || null, leadToken: leadToken || null, lead: lead || null } };
 }

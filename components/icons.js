@@ -80,4 +80,9 @@ export const Icon = {
       <path d="m5 13 4 4L19 7" />
     </svg>
   ),
+  funnel: (p) => (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={p?.className}>
+      <path d="M4 4h16l-6 8v6l-4 2v-8L4 4Z" />
+    </svg>
+  ),
 };

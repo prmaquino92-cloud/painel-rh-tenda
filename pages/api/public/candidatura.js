@@ -8,7 +8,7 @@ export default async function handler(req, res) {
     return;
   }
   const b = req.body || {};
-  const { vagaId, nome, idade, cep, estado, municipio, telefone, email, linkedin, instagram, facebook, iso, hora } = b;
+  const { vagaId, nome, idade, cep, estado, municipio, telefone, email, linkedin, instagram, facebook, iso, hora, leadToken } = b;
 
   if (!vagaId || !nome || !iso || !hora) {
     res.status(400).json({ error: 'Dados incompletos.' });
@@ -16,6 +16,13 @@ export default async function handler(req, res) {
   }
 
   const db = supabaseAdmin();
+
+  // se veio de um link de lead, recupera o lead pra vincular a candidatura a ele
+  let lead = null;
+  if (leadToken) {
+    const { data } = await db.from('leads').select('*').eq('token', leadToken).maybeSingle();
+    lead = data || null;
+  }
 
   // revalida disponibilidade no servidor antes de gravar (evita corrida entre dois candidatos)
   const [{ data: vaga }, { data: bloqueios }, { data: jaOcupado }] = await Promise.all([
@@ -62,6 +69,7 @@ export default async function handler(req, res) {
       facebook: facebook || null,
       vaga_id: vagaId,
       status: 'entrevista_agendada',
+      lead_id: lead ? lead.id : null,
     })
     .select()
     .single();
@@ -69,6 +77,17 @@ export default async function handler(req, res) {
   if (candErr) {
     res.status(500).json({ error: candErr.message });
     return;
+  }
+
+  if (lead) {
+    await db.from('leads').update({ status: 'convertido' }).eq('id', lead.id);
+    await db.from('lead_eventos').insert({
+      lead_id: lead.id,
+      tipo: 'candidatura_recebida',
+      status_anterior: lead.status,
+      status_novo: 'convertido',
+      observacao: 'Candidatura preenchida pelo próprio lead através do link.',
+    });
   }
 
   const { data: entrevista, error: entErr } = await db
