@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
 import { getCandidatosComEntrevista, getVagas, getPessoas, getUnidades } from '../../lib/data';
-import { STATUS_CANDIDATO, initials, fmtData } from '../../lib/domain';
+import { STATUS_CANDIDATO, FEEDBACK_DECISAO, initials, fmtData } from '../../lib/domain';
 
 function AvaliarForm({ candidato, gerentes, unidades, unidadeSugeridaId, onCancel }) {
   const [decisao, setDecisao] = useState('segunda_entrevista');
@@ -268,6 +268,23 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                               <div>
                                 2ª entrevista: {fmtData(c.entrevistaRodada2.data)} · {c.entrevistaRodada2.hora?.slice(0, 5)} com{' '}
                                 {pessoaById(c.entrevistaRodada2.gerente_id)?.nome || '—'} ({unidadeById(c.entrevistaRodada2.unidade_id)?.nome || '—'})
+                                {c.entrevistaRodada2.feedback_em ? (
+                                  <div style={{ marginTop: 4 }}>
+                                    <span className={`pill ${FEEDBACK_DECISAO[c.entrevistaRodada2.feedback_decisao]?.cls || 'pill-muted'}`}>
+                                      <span className="pill-dot" />
+                                      {FEEDBACK_DECISAO[c.entrevistaRodada2.feedback_decisao]?.label || 'Feedback recebido'}
+                                    </span>
+                                    {c.entrevistaRodada2.feedback_texto ? (
+                                      <div className="row-sub" style={{ marginTop: 3 }}>
+                                        {c.entrevistaRodada2.feedback_texto.length > 90
+                                          ? `${c.entrevistaRodada2.feedback_texto.slice(0, 90)}…`
+                                          : c.entrevistaRodada2.feedback_texto}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <div className="row-sub" style={{ marginTop: 3 }}>Aguardando feedback do gerente</div>
+                                )}
                               </div>
                             ) : c.status === 'declinado' ? (
                               <div>Descartado após a 1ª entrevista.</div>
@@ -282,8 +299,14 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                         )}
                       </td>
                       <td>
-                        {!jaAvaliado || c.status === 'declinado' ? (
-                          <span className="row-sub">Aguardando avaliação</span>
+                        {c.status !== 'aprovado' ? (
+                          <span className="row-sub">
+                            {c.status === 'segunda_entrevista_agendada'
+                              ? 'Aguardando 2ª entrevista e feedback do gerente'
+                              : c.status === 'declinado'
+                              ? 'Candidato descartado'
+                              : 'Aguardando avaliação'}
+                          </span>
                         ) : pessoaCorretor ? (
                           <div>
                             <div className="row-title" style={{ fontSize: 12.8 }}>

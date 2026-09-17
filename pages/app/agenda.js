@@ -110,9 +110,19 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
                     </td>
                     <td>
                       {presencial ? (
-                        <span style={{ fontSize: 12.3, color: 'var(--ink-faint)' }}>
-                          {gerente?.nome || 'Gerente não definido'} · {unidade?.nome || 'Unidade não definida'}
-                        </span>
+                        <div style={{ fontSize: 12.3, color: 'var(--ink-faint)' }}>
+                          <div>
+                            {gerente?.nome || 'Gerente não definido'} · {unidade?.nome || 'Unidade não definida'}
+                          </div>
+                          {e.feedback_em ? (
+                            <span className={`pill ${e.feedback_decisao === 'aprovado' ? 'pill-success' : 'pill-danger'}`} style={{ marginTop: 4 }}>
+                              <span className="pill-dot" />
+                              {e.feedback_decisao === 'aprovado' ? 'Gerente aprovou' : 'Gerente reprovou'}
+                            </span>
+                          ) : (
+                            <span style={{ marginTop: 4, display: 'inline-block' }}>Aguardando feedback do gerente</span>
+                          )}
+                        </div>
                       ) : (
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.3, color: 'var(--ink-faint)' }}>
                           {e.meet_link ? (
