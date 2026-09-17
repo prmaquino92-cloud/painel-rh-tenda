@@ -64,6 +64,7 @@ export default async function handler(req, res) {
       facebook: facebook || null,
       vaga_id: null,
       status: 'entrevista_agendada',
+      origem: 'site',
     })
     .select()
     .single();

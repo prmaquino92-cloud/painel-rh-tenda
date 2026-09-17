@@ -3,7 +3,7 @@ import Link from 'next/link';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
 import { getCandidatosComEntrevista, getVagas, getPessoas, getUnidades } from '../../lib/data';
-import { STATUS_CANDIDATO, FEEDBACK_DECISAO, initials, fmtData } from '../../lib/domain';
+import { STATUS_CANDIDATO, FEEDBACK_DECISAO, ORIGEM_LABEL, ORIGEM_ORDEM, initials, fmtData } from '../../lib/domain';
 import {
   AvaliarForm as AvaliarFormFields,
   DefinirEquipeForm as DefinirEquipeFormFields,
@@ -44,6 +44,7 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
   const [busca, setBusca] = useState('');
   const [fStatus, setFStatus] = useState('');
   const [fVaga, setFVaga] = useState('');
+  const [fOrigem, setFOrigem] = useState('');
   const [equipeId, setEquipeId] = useState(null);
   const [avaliarId, setAvaliarId] = useState(null);
   const [vagaFormId, setVagaFormId] = useState(null);
@@ -57,6 +58,7 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
     if (busca && !(c.nome.toLowerCase().includes(busca.toLowerCase()) || (c.email || '').toLowerCase().includes(busca.toLowerCase()))) return false;
     if (fStatus && c.status !== fStatus) return false;
     if (fVaga && c.vaga_id !== fVaga) return false;
+    if (fOrigem && c.origem !== fOrigem) return false;
     return true;
   });
 
@@ -87,6 +89,14 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
               {vagas.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.titulo}
+                </option>
+              ))}
+            </select>
+            <select className="input" value={fOrigem} onChange={(e) => setFOrigem(e.target.value)}>
+              <option value="">Todas as origens</option>
+              {ORIGEM_ORDEM.map((o) => (
+                <option key={o} value={o}>
+                  {ORIGEM_LABEL[o]}
                 </option>
               ))}
             </select>
@@ -153,6 +163,7 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                               {c.nome}
                             </div>
                             <div className="row-sub">{c.email || '—'}</div>
+                            <div className="row-sub">{ORIGEM_LABEL[c.origem] || ORIGEM_LABEL.outro}</div>
                           </div>
                         </Link>
                       </td>

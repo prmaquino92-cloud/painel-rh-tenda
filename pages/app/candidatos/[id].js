@@ -3,7 +3,7 @@ import Link from 'next/link';
 import Layout from '../../../components/Layout';
 import { requireAuth } from '../../../lib/auth';
 import { getCandidato, getVaga, getVagas, getPessoas, getUnidades } from '../../../lib/data';
-import { STATUS_CANDIDATO, FEEDBACK_DECISAO, initials, fmtData } from '../../../lib/domain';
+import { STATUS_CANDIDATO, FEEDBACK_DECISAO, ORIGEM_LABEL, initials, fmtData } from '../../../lib/domain';
 import { AvaliarForm, DefinirEquipeForm, VagaForm } from '../../../components/CandidatoForms';
 
 export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unidades, pessoaCorretor, superior, erro }) {
@@ -77,6 +77,10 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unida
             <div>
               <div className="row-sub">Recebido em</div>
               <div>{fmtData(candidato.criado_em?.slice(0, 10))}</div>
+            </div>
+            <div>
+              <div className="row-sub">Origem</div>
+              <div>{ORIGEM_LABEL[candidato.origem] || ORIGEM_LABEL.outro}</div>
             </div>
           </div>
           {definindoVaga ? (

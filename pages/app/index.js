@@ -1,14 +1,29 @@
 import Link from 'next/link';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
-import { getUnidades, getPessoas, getVagas, getCandidatosComEntrevista } from '../../lib/data';
-import { STATUS_CANDIDATO, PAPEL_LABEL, initials, fmtData } from '../../lib/domain';
+import { getUnidades, getPessoas, getVagas, getCandidatosComEntrevista, getLeads } from '../../lib/data';
+import { STATUS_CANDIDATO, PAPEL_LABEL, ORIGEM_LABEL, ORIGEM_ORDEM, initials, fmtData } from '../../lib/domain';
 
-export default function VisaoGeral({ unidades, pessoas, vagas, candidatos }) {
+export default function VisaoGeral({ unidades, pessoas, vagas, candidatos, leads }) {
   const vagasAtivas = vagas.filter((v) => v.status === 'ativa').length;
   const candidatosAtivos = candidatos.filter((c) => !['contratado', 'declinado'].includes(c.status)).length;
   const funilEtapas = ['inscrito', 'entrevista_agendada', 'entrevistado', 'aprovado', 'contratado'];
   const proximas = candidatos.filter((c) => c.status === 'entrevista_agendada' && c.entrevista).slice(0, 4);
+
+  // Métricas de conversão por origem: quantos leads entraram por canal, quantos viraram
+  // candidatos com entrevista marcada e quantos foram efetivamente contratados.
+  const porOrigem = ORIGEM_ORDEM.map((o) => {
+    const leadsDaOrigem = leads.filter((l) => l.origem === o).length;
+    const candidatosDaOrigem = candidatos.filter((c) => c.origem === o);
+    const contratadosDaOrigem = candidatosDaOrigem.filter((c) => c.status === 'contratado').length;
+    return {
+      origem: o,
+      leads: leadsDaOrigem,
+      candidatos: candidatosDaOrigem.length,
+      contratados: contratadosDaOrigem,
+      taxa: candidatosDaOrigem.length ? Math.round((contratadosDaOrigem / candidatosDaOrigem.length) * 100) : 0,
+    };
+  }).filter((o) => o.leads > 0 || o.candidatos > 0);
 
   return (
     <Layout active="geral" crumb="Central de trabalho" title="Visão geral" pendentes={candidatos.filter((c) => c.status === 'inscrito').length}>
@@ -70,6 +85,41 @@ export default function VisaoGeral({ unidades, pessoas, vagas, candidatos }) {
         </div>
       </div>
 
+      <div className="section-head">
+        <h2>Conversão por origem</h2>
+        <p>De cada canal de captação: quantos leads entraram, quantos viraram entrevista e quantos foram contratados</p>
+      </div>
+      <div className="card">
+        <div className="table-wrap">
+          {porOrigem.length === 0 ? (
+            <div className="empty">Ainda sem leads ou candidatos com origem registrada.</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Origem</th>
+                  <th>Leads</th>
+                  <th>Candidatos (entrevista)</th>
+                  <th>Contratados</th>
+                  <th>Taxa candidato → contratado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {porOrigem.map((o) => (
+                  <tr key={o.origem}>
+                    <td className="row-title">{ORIGEM_LABEL[o.origem]}</td>
+                    <td className="num">{o.origem === 'site' ? '—' : o.leads}</td>
+                    <td className="num">{o.candidatos}</td>
+                    <td className="num">{o.contratados}</td>
+                    <td className="num">{o.taxa}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
       <div className="grid grid-2" style={{ marginTop: 26, alignItems: 'start' }}>
         <div>
           <div className="section-head" style={{ marginTop: 0 }}>
@@ -128,11 +178,12 @@ export default function VisaoGeral({ unidades, pessoas, vagas, candidatos }) {
 export async function getServerSideProps(context) {
   const redirect = requireAuth(context);
   if (redirect) return redirect;
-  const [unidades, pessoas, vagas, candidatos] = await Promise.all([
+  const [unidades, pessoas, vagas, candidatos, leads] = await Promise.all([
     getUnidades(),
     getPessoas(),
     getVagas(),
     getCandidatosComEntrevista(),
+    getLeads(),
   ]);
-  return { props: { unidades, pessoas, vagas, candidatos } };
+  return { props: { unidades, pessoas, vagas, candidatos, leads } };
 }

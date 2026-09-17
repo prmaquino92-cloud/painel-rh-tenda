@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
 import { getLeads, getVagas, getLeadEventosRecentes, getCandidatosComEntrevista } from '../../lib/data';
-import { STATUS_LEAD, initials, fmtData } from '../../lib/domain';
+import { STATUS_LEAD, ORIGEM_LABEL, ORIGEM_ORDEM, initials, fmtData } from '../../lib/domain';
 import { Icon } from '../../components/icons';
 
 const LABEL_TIPO_EVENTO = {
@@ -97,7 +97,7 @@ function ImportarLeads() {
 function EvoluirForm({ lead, vagas, onCancel }) {
   return (
     <tr>
-      <td colSpan={6} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+      <td colSpan={7} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
         <form method="POST" action={`/api/leads/${lead.id}/gerar-link`} style={{ padding: '14px 16px' }}>
           <div className="field">
             <label>Vaga de interesse</label>
@@ -130,7 +130,7 @@ function EvoluirForm({ lead, vagas, onCancel }) {
 function TimelineLead({ eventos }) {
   return (
     <tr>
-      <td colSpan={6} style={{ background: 'var(--surface-2, #f7f7fa)', padding: '12px 16px' }}>
+      <td colSpan={7} style={{ background: 'var(--surface-2, #f7f7fa)', padding: '12px 16px' }}>
         {eventos.length === 0 ? (
           <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>Sem eventos registrados ainda.</div>
         ) : (
@@ -247,6 +247,17 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                   </select>
                 </div>
               </div>
+              <div className="field">
+                <label>Origem</label>
+                <select name="origem" defaultValue="outro" required>
+                  {ORIGEM_ORDEM.filter((o) => o !== 'site').map((o) => (
+                    <option key={o} value={o}>
+                      {ORIGEM_LABEL[o]}
+                    </option>
+                  ))}
+                </select>
+                <p className="hint">De onde esse contato veio — usado nas métricas de conversão por canal.</p>
+              </div>
               <button className="btn btn-primary" type="submit">
                 Cadastrar
               </button>
@@ -297,6 +308,21 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
       </div>
 
       <div className="section-head">
+        <h2>Leads por origem</h2>
+        <p>De onde os contatos estão vindo</p>
+      </div>
+      <div className="card card-pad">
+        <div className="grid grid-4">
+          {ORIGEM_ORDEM.filter((o) => o !== 'site').map((o) => (
+            <div key={o} style={{ textAlign: 'center', padding: 10 }}>
+              <div style={{ fontFamily: 'Sora,sans-serif', fontSize: 26 }}>{leads.filter((l) => l.origem === o).length}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 2 }}>{ORIGEM_LABEL[o]}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="section-head">
         <h2>Contatos por dia</h2>
         <p>Últimos 14 dias — cada mudança de status conta como um contato realizado</p>
       </div>
@@ -332,6 +358,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
               <thead>
                 <tr>
                   <th>Lead</th>
+                  <th>Origem</th>
                   <th>Vaga de interesse</th>
                   <th>Localidade</th>
                   <th>Status</th>
@@ -356,6 +383,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                           </div>
                         </div>
                       </td>
+                      <td className="row-sub">{ORIGEM_LABEL[l.origem] || ORIGEM_LABEL.outro}</td>
                       <td>{l.vaga_id ? vagaNome(l.vaga_id) : '—'}</td>
                       <td className="row-sub">{l.localidade || '—'}</td>
                       <td>

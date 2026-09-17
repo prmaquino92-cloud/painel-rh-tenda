@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../../../lib/supabase';
 import { isAuthenticated } from '../../../lib/auth';
+import { ORIGEM_ORDEM } from '../../../lib/domain';
 
 export default async function handler(req, res) {
   if (!isAuthenticated(req)) {
@@ -10,7 +11,7 @@ export default async function handler(req, res) {
     res.status(405).end();
     return;
   }
-  const { nome, telefone, email, localidade, vaga_id } = req.body || {};
+  const { nome, telefone, email, localidade, vaga_id, origem } = req.body || {};
   if (!nome || !nome.trim()) {
     res.writeHead(302, { Location: '/app/leads?erro=1' });
     res.end();
@@ -25,6 +26,7 @@ export default async function handler(req, res) {
       email: email || null,
       localidade: localidade || null,
       vaga_id: vaga_id || null,
+      origem: ORIGEM_ORDEM.includes(origem) ? origem : 'outro',
       status: 'novo',
     })
     .select()

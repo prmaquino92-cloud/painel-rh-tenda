@@ -2,6 +2,21 @@ import * as XLSX from 'xlsx';
 import { supabaseAdmin } from '../../../lib/supabase';
 import { isAuthenticated } from '../../../lib/auth';
 import { getVagas } from '../../../lib/data';
+import { ORIGEM_LABEL, ORIGEM_ORDEM } from '../../../lib/domain';
+
+// aceita tanto o valor interno ("pandape") quanto o rótulo em português ("Pandapé") na planilha
+function resolverOrigem(valor) {
+  const v = String(valor || '').trim().toLowerCase();
+  if (!v) return 'outro';
+  if (ORIGEM_ORDEM.includes(v)) return v;
+  const porLabel = Object.entries(ORIGEM_LABEL).find(([, label]) => label.toLowerCase() === v);
+  if (porLabel) return porLabel[0];
+  if (v.includes('meta') || v.includes('whats')) return 'meta_whatsapp';
+  if (v.includes('panda')) return 'pandape';
+  if (v.includes('ativ')) return 'abordagem_ativa';
+  if (v.includes('indic')) return 'indicacao';
+  return 'outro';
+}
 
 export const config = {
   api: {
@@ -59,7 +74,12 @@ export default async function handler(req, res) {
       vaga_id = vagaPorTitulo.get(vagaTitulo.toLowerCase()) || null;
       if (!vaga_id) avisos.push(`Linha ${idx + 2}: vaga "${vagaTitulo}" não encontrada — lead importado sem vaga vinculada.`);
     }
-    paraInserir.push({ nome, telefone, email, localidade, vaga_id, status: 'novo' });
+    const origemBruta = String(linha['Origem'] ?? linha['origem'] ?? '').trim();
+    const origem = resolverOrigem(origemBruta);
+    if (origemBruta && origem === 'outro' && !['outro', 'outros'].includes(origemBruta.toLowerCase())) {
+      avisos.push(`Linha ${idx + 2}: origem "${origemBruta}" não reconhecida — importado como "Outro".`);
+    }
+    paraInserir.push({ nome, telefone, email, localidade, vaga_id, origem, status: 'novo' });
   });
 
   if (paraInserir.length === 0) {

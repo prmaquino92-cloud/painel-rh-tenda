@@ -69,6 +69,7 @@ export default async function handler(req, res) {
       facebook: facebook || null,
       vaga_id: vagaId,
       status: 'entrevista_agendada',
+      origem: lead ? lead.origem : 'site',
       lead_id: lead ? lead.id : null,
     })
     .select()
