@@ -4,10 +4,95 @@ import { requireAuth } from '../../lib/auth';
 import { getCandidatosComEntrevista, getVagas, getPessoas, getUnidades } from '../../lib/data';
 import { STATUS_CANDIDATO, initials, fmtData } from '../../lib/domain';
 
+function AvaliarForm({ candidato, gerentes, unidades, unidadeSugeridaId, onCancel }) {
+  const [decisao, setDecisao] = useState('segunda_entrevista');
+  return (
+    <tr>
+      <td colSpan={7} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+        <form method="POST" action={`/api/candidatos/${candidato.id}/avaliar`} style={{ padding: '14px 16px' }}>
+          <div className="field">
+            <label>Sua avaliação da 1ª entrevista</label>
+            <textarea name="parecer" placeholder="Como foi a conversa, pontos fortes, alertas..." defaultValue={candidato.parecer || ''} />
+          </div>
+          <div className="field">
+            <label>Próximo passo</label>
+            <div style={{ display: 'flex', gap: 18, fontSize: 13, margin: '4px 0 10px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
+                <input
+                  type="radio"
+                  name="decisao"
+                  value="segunda_entrevista"
+                  checked={decisao === 'segunda_entrevista'}
+                  onChange={() => setDecisao('segunda_entrevista')}
+                />
+                Marcar 2ª entrevista presencial com o gerente
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
+                <input type="radio" name="decisao" value="declinar" checked={decisao === 'declinar'} onChange={() => setDecisao('declinar')} />
+                Descartar candidato
+              </label>
+            </div>
+          </div>
+          {decisao === 'segunda_entrevista' ? (
+            <>
+              <div className="field-row">
+                <div className="field">
+                  <label>Gerente responsável</label>
+                  <select name="gerente_id" defaultValue="" required>
+                    <option value="" disabled>
+                      Selecione
+                    </option>
+                    {gerentes.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Unidade</label>
+                  <select name="unidade_id" defaultValue={unidadeSugeridaId || ''} required>
+                    <option value="" disabled>
+                      Selecione
+                    </option>
+                    {unidades.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label>Data</label>
+                  <input type="date" name="data" required />
+                </div>
+                <div className="field">
+                  <label>Horário</label>
+                  <input type="time" name="hora" required />
+                </div>
+              </div>
+            </>
+          ) : null}
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Salvar avaliação
+            </button>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
 function DefinirEquipeForm({ candidato, gerentes, unidades, unidadeSugeridaId, onCancel }) {
   return (
     <tr>
-      <td colSpan={6} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+      <td colSpan={7} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
         <form method="POST" action={`/api/candidatos/${candidato.id}/definir-equipe`} style={{ padding: '14px 16px' }}>
           <div className="field-row">
             <div className="field">
@@ -54,9 +139,11 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
   const [fStatus, setFStatus] = useState('');
   const [fVaga, setFVaga] = useState('');
   const [equipeId, setEquipeId] = useState(null);
+  const [avaliarId, setAvaliarId] = useState(null);
   const vagaTitulo = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
   const vagaById = (id) => vagas.find((v) => v.id === id);
   const pessoaById = (id) => pessoas.find((p) => p.id === id);
+  const unidadeById = (id) => unidades.find((u) => u.id === id);
   const gerentes = pessoas.filter((p) => p.papel === 'gerente_comercial');
 
   const filtrados = candidatos.filter((c) => {
@@ -73,7 +160,7 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
       </p>
       {erro ? (
         <div className="note" style={{ marginTop: 12 }}>
-          Não foi possível definir a equipe. Selecione um gerente comercial e tente de novo.
+          Não foi possível salvar. Confira os campos obrigatórios e tente de novo.
         </div>
       ) : null}
       <div className="card" style={{ marginTop: 16 }}>
@@ -107,9 +194,10 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                 <tr>
                   <th>Candidato</th>
                   <th>Vaga</th>
-                  <th>Entrevista</th>
+                  <th>1ª entrevista (você)</th>
                   <th>Status</th>
-                  <th>Equipe</th>
+                  <th>Avaliação e próxima etapa</th>
+                  <th>Contratação</th>
                   <th>Recebido</th>
                 </tr>
               </thead>
@@ -117,8 +205,23 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                 {filtrados.map((c) => {
                   const st = STATUS_CANDIDATO[c.status];
                   const pessoaCorretor = c.pessoa_id ? pessoaById(c.pessoa_id) : null;
+                  const vagaDaCandidatura = vagaById(c.vaga_id);
+                  const jaAvaliado = Boolean(c.parecer);
+                  const podeAvaliar = Boolean(c.entrevista) && !jaAvaliado;
+
+                  if (avaliarId === c.id) {
+                    return (
+                      <AvaliarForm
+                        key={c.id}
+                        candidato={c}
+                        gerentes={gerentes}
+                        unidades={unidades}
+                        unidadeSugeridaId={vagaDaCandidatura?.unidade_id}
+                        onCancel={() => setAvaliarId(null)}
+                      />
+                    );
+                  }
                   if (equipeId === c.id) {
-                    const vagaDaCandidatura = vagaById(c.vaga_id);
                     return (
                       <DefinirEquipeForm
                         key={c.id}
@@ -155,8 +258,33 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                           {st.label}
                         </span>
                       </td>
+                      <td style={{ maxWidth: 260 }}>
+                        {jaAvaliado ? (
+                          <div style={{ fontSize: 12.3 }}>
+                            <div className="row-sub" style={{ marginBottom: 4 }}>
+                              {c.parecer.length > 90 ? `${c.parecer.slice(0, 90)}…` : c.parecer}
+                            </div>
+                            {c.entrevistaRodada2 ? (
+                              <div>
+                                2ª entrevista: {fmtData(c.entrevistaRodada2.data)} · {c.entrevistaRodada2.hora?.slice(0, 5)} com{' '}
+                                {pessoaById(c.entrevistaRodada2.gerente_id)?.nome || '—'} ({unidadeById(c.entrevistaRodada2.unidade_id)?.nome || '—'})
+                              </div>
+                            ) : c.status === 'declinado' ? (
+                              <div>Descartado após a 1ª entrevista.</div>
+                            ) : null}
+                          </div>
+                        ) : podeAvaliar ? (
+                          <button className="btn btn-outline btn-sm" type="button" onClick={() => setAvaliarId(c.id)}>
+                            Registrar avaliação
+                          </button>
+                        ) : (
+                          <span className="row-sub">Aguardando a 1ª entrevista</span>
+                        )}
+                      </td>
                       <td>
-                        {pessoaCorretor ? (
+                        {!jaAvaliado || c.status === 'declinado' ? (
+                          <span className="row-sub">Aguardando avaliação</span>
+                        ) : pessoaCorretor ? (
                           <div>
                             <div className="row-title" style={{ fontSize: 12.8 }}>
                               {pessoaById(pessoaCorretor.superior_id)?.nome || '—'}
@@ -167,7 +295,7 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                           </div>
                         ) : (
                           <button className="btn btn-outline btn-sm" type="button" onClick={() => setEquipeId(c.id)}>
-                            Definir equipe
+                            Confirmar contratação
                           </button>
                         )}
                       </td>

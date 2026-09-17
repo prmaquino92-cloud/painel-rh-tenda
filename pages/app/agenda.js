@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
-import { getEntrevistasAgendadas, getBloqueios } from '../../lib/data';
+import { getEntrevistasAgendadas, getBloqueios, getPessoas, getUnidades } from '../../lib/data';
 import { getGoogleStatus } from '../../lib/google';
 import { DIA_SEMANA_LABEL, fmtData } from '../../lib/domain';
 import { Icon } from '../../components/icons';
@@ -14,9 +14,11 @@ function isProximos7(iso) {
   return diff >= 0 && diff <= 7;
 }
 
-export default function Agenda({ entrevistas, bloqueios, googleConectado }) {
+export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoas, unidades }) {
   const [showForm, setShowForm] = useState(false);
   const [tipo, setTipo] = useState('pontual');
+  const pessoaById = (id) => pessoas.find((p) => p.id === id);
+  const unidadeById = (id) => unidades.find((u) => u.id === id);
 
   return (
     <Layout active="agenda" crumb="Recrutamento" title="Agenda de entrevistas">
@@ -65,7 +67,7 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado }) {
 
       <div className="section-head">
         <h2>Entrevistas vinculadas</h2>
-        <p>Data, candidato, vaga e acesso à videoconferência</p>
+        <p>Data, candidato, vaga e local/acesso de cada etapa</p>
       </div>
       <div className="card">
         <div className="table-wrap">
@@ -75,40 +77,60 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado }) {
                 <th>Data e horário</th>
                 <th>Candidato</th>
                 <th>Vaga</th>
+                <th>Etapa</th>
                 <th>Modalidade</th>
-                <th>Acesso</th>
+                <th>Acesso / local</th>
               </tr>
             </thead>
             <tbody>
-              {entrevistas.map((e) => (
-                <tr key={e.id}>
-                  <td className="row-title">
-                    {fmtData(e.data)} · {e.hora?.slice(0, 5)}
-                  </td>
-                  <td>{e.candidatos?.nome || '—'}</td>
-                  <td className="row-sub">{e.vagas?.titulo || '—'}</td>
-                  <td>
-                    <span className="pill pill-info">
-                      <span className="pill-dot" />
-                      Videoconferência
-                    </span>
-                  </td>
-                  <td>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.3, color: 'var(--ink-faint)' }}>
-                      {e.meet_link ? (
-                        <a href={e.meet_link} target="_blank" rel="noreferrer">
-                          {Icon.meet({ className: 'ic' })} entrar
-                        </a>
+              {entrevistas.map((e) => {
+                const presencial = e.tipo === 'presencial';
+                const gerente = presencial ? pessoaById(e.gerente_id) : null;
+                const unidade = presencial ? unidadeById(e.unidade_id) : null;
+                return (
+                  <tr key={e.id}>
+                    <td className="row-title">
+                      {fmtData(e.data)} · {e.hora?.slice(0, 5)}
+                    </td>
+                    <td>{e.candidatos?.nome || '—'}</td>
+                    <td className="row-sub">{e.vagas?.titulo || '—'}</td>
+                    <td className="row-sub">{(e.rodada || 1) === 2 ? '2ª entrevista' : '1ª entrevista'}</td>
+                    <td>
+                      {presencial ? (
+                        <span className="pill pill-warning">
+                          <span className="pill-dot" />
+                          Presencial
+                        </span>
                       ) : (
-                        <>{Icon.meet({ className: 'ic' })} pendente de conexão</>
+                        <span className="pill pill-info">
+                          <span className="pill-dot" />
+                          Videoconferência
+                        </span>
                       )}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td>
+                      {presencial ? (
+                        <span style={{ fontSize: 12.3, color: 'var(--ink-faint)' }}>
+                          {gerente?.nome || 'Gerente não definido'} · {unidade?.nome || 'Unidade não definida'}
+                        </span>
+                      ) : (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.3, color: 'var(--ink-faint)' }}>
+                          {e.meet_link ? (
+                            <a href={e.meet_link} target="_blank" rel="noreferrer">
+                              {Icon.meet({ className: 'ic' })} entrar
+                            </a>
+                          ) : (
+                            <>{Icon.meet({ className: 'ic' })} pendente de conexão</>
+                          )}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {entrevistas.length === 0 ? (
                 <tr>
-                  <td colSpan={5}>
+                  <td colSpan={6}>
                     <div className="empty">Nenhuma entrevista agendada ainda.</div>
                   </td>
                 </tr>
@@ -222,6 +244,12 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado }) {
 export async function getServerSideProps(context) {
   const redirect = requireAuth(context);
   if (redirect) return redirect;
-  const [entrevistas, bloqueios, google] = await Promise.all([getEntrevistasAgendadas(), getBloqueios(), getGoogleStatus()]);
-  return { props: { entrevistas, bloqueios, googleConectado: google.conectado } };
+  const [entrevistas, bloqueios, google, pessoas, unidades] = await Promise.all([
+    getEntrevistasAgendadas(),
+    getBloqueios(),
+    getGoogleStatus(),
+    getPessoas(),
+    getUnidades(),
+  ]);
+  return { props: { entrevistas, bloqueios, googleConectado: google.conectado, pessoas, unidades } };
 }
