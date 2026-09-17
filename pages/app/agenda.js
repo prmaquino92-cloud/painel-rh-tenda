@@ -17,8 +17,11 @@ function isProximos7(iso) {
 export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoas, unidades }) {
   const [showForm, setShowForm] = useState(false);
   const [tipo, setTipo] = useState('pontual');
+  const [mostrarRealizadas, setMostrarRealizadas] = useState(false);
   const pessoaById = (id) => pessoas.find((p) => p.id === id);
   const unidadeById = (id) => unidades.find((u) => u.id === id);
+  const pendentes = entrevistas.filter((e) => e.status !== 'realizada');
+  const visiveis = mostrarRealizadas ? entrevistas : pendentes;
 
   return (
     <Layout active="agenda" crumb="Recrutamento" title="Agenda de entrevistas">
@@ -42,13 +45,13 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
 
       <div className="grid grid-4">
         <div className="stat">
-          <div className="label">Entrevistas agendadas</div>
-          <div className="value num">{entrevistas.length}</div>
-          <div className="sub">Google Meet</div>
+          <div className="label">Entrevistas pendentes</div>
+          <div className="value num">{pendentes.length}</div>
+          <div className="sub">Ainda não marcadas como realizadas</div>
         </div>
         <div className="stat">
           <div className="label">Próximos 7 dias</div>
-          <div className="value num">{entrevistas.filter((e) => isProximos7(e.data)).length}</div>
+          <div className="value num">{pendentes.filter((e) => isProximos7(e.data)).length}</div>
           <div className="sub">A partir de hoje</div>
         </div>
         <div className="stat">
@@ -70,6 +73,12 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
         <p>Data, candidato, vaga e local/acesso de cada etapa</p>
       </div>
       <div className="card">
+        <div className="card-pad" style={{ paddingBottom: 0, display: 'flex', justifyContent: 'flex-end' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.3, color: 'var(--ink-soft)', fontWeight: 400 }}>
+            <input type="checkbox" checked={mostrarRealizadas} onChange={(e) => setMostrarRealizadas(e.target.checked)} />
+            Mostrar entrevistas já realizadas
+          </label>
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
@@ -80,10 +89,11 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
                 <th>Etapa</th>
                 <th>Modalidade</th>
                 <th>Acesso / local</th>
+                <th>Situação</th>
               </tr>
             </thead>
             <tbody>
-              {entrevistas.map((e) => {
+              {visiveis.map((e) => {
                 const presencial = e.tipo === 'presencial';
                 const gerente = presencial ? pessoaById(e.gerente_id) : null;
                 const unidade = presencial ? unidadeById(e.unidade_id) : null;
@@ -135,13 +145,29 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
                         </span>
                       )}
                     </td>
+                    <td>
+                      {e.status === 'realizada' ? (
+                        <span className="pill pill-success">
+                          <span className="pill-dot" />
+                          Realizada
+                        </span>
+                      ) : (
+                        <form method="POST" action={`/api/entrevistas/${e.id}/realizada`}>
+                          <button className="btn btn-ghost btn-sm" type="submit">
+                            Marcar como realizada
+                          </button>
+                        </form>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
-              {entrevistas.length === 0 ? (
+              {visiveis.length === 0 ? (
                 <tr>
-                  <td colSpan={6}>
-                    <div className="empty">Nenhuma entrevista agendada ainda.</div>
+                  <td colSpan={7}>
+                    <div className="empty">
+                      {mostrarRealizadas ? 'Nenhuma entrevista agendada ainda.' : 'Nenhuma entrevista pendente — tudo em dia.'}
+                    </div>
                   </td>
                 </tr>
               ) : null}
