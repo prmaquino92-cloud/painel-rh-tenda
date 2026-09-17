@@ -1,134 +1,26 @@
 import { useState } from 'react';
+import Link from 'next/link';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
 import { getCandidatosComEntrevista, getVagas, getPessoas, getUnidades } from '../../lib/data';
 import { STATUS_CANDIDATO, FEEDBACK_DECISAO, initials, fmtData } from '../../lib/domain';
+import { AvaliarForm as AvaliarFormFields, DefinirEquipeForm as DefinirEquipeFormFields } from '../../components/CandidatoForms';
 
-function AvaliarForm({ candidato, gerentes, unidades, unidadeSugeridaId, onCancel }) {
-  const [decisao, setDecisao] = useState('segunda_entrevista');
+function AvaliarForm(props) {
   return (
     <tr>
       <td colSpan={7} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
-        <form method="POST" action={`/api/candidatos/${candidato.id}/avaliar`} style={{ padding: '14px 16px' }}>
-          <div className="field">
-            <label>Sua avaliação da 1ª entrevista</label>
-            <textarea name="parecer" placeholder="Como foi a conversa, pontos fortes, alertas..." defaultValue={candidato.parecer || ''} />
-          </div>
-          <div className="field">
-            <label>Próximo passo</label>
-            <div style={{ display: 'flex', gap: 18, fontSize: 13, margin: '4px 0 10px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
-                <input
-                  type="radio"
-                  name="decisao"
-                  value="segunda_entrevista"
-                  checked={decisao === 'segunda_entrevista'}
-                  onChange={() => setDecisao('segunda_entrevista')}
-                />
-                Marcar 2ª entrevista presencial com o gerente
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
-                <input type="radio" name="decisao" value="declinar" checked={decisao === 'declinar'} onChange={() => setDecisao('declinar')} />
-                Descartar candidato
-              </label>
-            </div>
-          </div>
-          {decisao === 'segunda_entrevista' ? (
-            <>
-              <div className="field-row">
-                <div className="field">
-                  <label>Gerente responsável</label>
-                  <select name="gerente_id" defaultValue="" required>
-                    <option value="" disabled>
-                      Selecione
-                    </option>
-                    {gerentes.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.nome}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label>Unidade</label>
-                  <select name="unidade_id" defaultValue={unidadeSugeridaId || ''} required>
-                    <option value="" disabled>
-                      Selecione
-                    </option>
-                    {unidades.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.nome}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="field-row">
-                <div className="field">
-                  <label>Data</label>
-                  <input type="date" name="data" required />
-                </div>
-                <div className="field">
-                  <label>Horário</label>
-                  <input type="time" name="hora" required />
-                </div>
-              </div>
-            </>
-          ) : null}
-          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-            <button className="btn btn-primary btn-sm" type="submit">
-              Salvar avaliação
-            </button>
-            <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
-              Cancelar
-            </button>
-          </div>
-        </form>
+        <AvaliarFormFields {...props} />
       </td>
     </tr>
   );
 }
 
-function DefinirEquipeForm({ candidato, gerentes, unidades, unidadeSugeridaId, onCancel }) {
+function DefinirEquipeForm(props) {
   return (
     <tr>
       <td colSpan={7} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
-        <form method="POST" action={`/api/candidatos/${candidato.id}/definir-equipe`} style={{ padding: '14px 16px' }}>
-          <div className="field-row">
-            <div className="field">
-              <label>Equipe (gerente comercial)</label>
-              <select name="gerente_id" defaultValue="" required>
-                <option value="" disabled>
-                  Selecione
-                </option>
-                {gerentes.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label>Unidade</label>
-              <select name="unidade_id" defaultValue={unidadeSugeridaId || ''}>
-                <option value="">Toda a operação</option>
-                {unidades.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.nome}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-primary btn-sm" type="submit">
-              Salvar equipe
-            </button>
-            <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
-              Cancelar
-            </button>
-          </div>
-        </form>
+        <DefinirEquipeFormFields {...props} />
       </td>
     </tr>
   );
@@ -236,13 +128,15 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                   return (
                     <tr key={c.id}>
                       <td>
-                        <div className="cell-person">
+                        <Link href={`/app/candidatos/${c.id}`} className="cell-person" style={{ textDecoration: 'none', color: 'inherit' }}>
                           <div className="mini-avatar">{initials(c.nome)}</div>
                           <div>
-                            <div className="row-title">{c.nome}</div>
+                            <div className="row-title" style={{ textDecoration: 'underline', textDecorationColor: 'var(--border, #ddd)' }}>
+                              {c.nome}
+                            </div>
                             <div className="row-sub">{c.email || '—'}</div>
                           </div>
-                        </div>
+                        </Link>
                       </td>
                       <td>{vagaTitulo(c.vaga_id)}</td>
                       <td>
