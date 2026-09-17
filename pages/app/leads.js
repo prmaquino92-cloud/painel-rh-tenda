@@ -11,6 +11,16 @@ const LABEL_TIPO_EVENTO = {
   candidatura_recebida: 'Candidatura recebida',
 };
 
+// Monta o link "clique para conversar" a partir do telefone cadastrado — assume DDD + número
+// brasileiro e completa com o código do país (55) quando ainda não vem incluso.
+function linkWhatsapp(telefone) {
+  if (!telefone) return null;
+  const digitos = telefone.replace(/\D/g, '');
+  if (!digitos) return null;
+  const comCodigoPais = digitos.startsWith('55') ? digitos : `55${digitos}`;
+  return `https://wa.me/${comCodigoPais}`;
+}
+
 function ImportarLeads() {
   const [arquivo, setArquivo] = useState(null);
   const [enviando, setEnviando] = useState(false);
@@ -198,7 +208,7 @@ function LimparDuplicados() {
 function EvoluirForm({ lead, vagas, onCancel }) {
   return (
     <tr>
-      <td colSpan={7} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+      <td colSpan={9} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
         <form method="POST" action={`/api/leads/${lead.id}/gerar-link`} style={{ padding: '14px 16px' }}>
           <div className="field">
             <label>Vaga de interesse</label>
@@ -231,7 +241,7 @@ function EvoluirForm({ lead, vagas, onCancel }) {
 function TimelineLead({ eventos }) {
   return (
     <tr>
-      <td colSpan={7} style={{ background: 'var(--surface-2, #f7f7fa)', padding: '12px 16px' }}>
+      <td colSpan={9} style={{ background: 'var(--surface-2, #f7f7fa)', padding: '12px 16px' }}>
         {eventos.length === 0 ? (
           <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>Sem eventos registrados ainda.</div>
         ) : (
@@ -464,6 +474,8 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
               <thead>
                 <tr>
                   <th>Lead</th>
+                  <th>Telefone</th>
+                  <th>E-mail</th>
                   <th>Origem</th>
                   <th>Vaga de interesse</th>
                   <th>Localidade</th>
@@ -485,10 +497,28 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                           <div className="mini-avatar">{initials(l.nome)}</div>
                           <div>
                             <div className="row-title">{l.nome}</div>
-                            <div className="row-sub">{[l.telefone, l.email].filter(Boolean).join(' · ') || '—'}</div>
                           </div>
                         </div>
                       </td>
+                      <td className="row-sub">
+                        {l.telefone ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span>{l.telefone}</span>
+                            <a
+                              href={linkWhatsapp(l.telefone)}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Chamar no WhatsApp"
+                              style={{ display: 'inline-flex' }}
+                            >
+                              {Icon.whatsapp({ className: 'ic' })}
+                            </a>
+                          </div>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="row-sub">{l.email || '—'}</td>
                       <td className="row-sub">{ORIGEM_LABEL[l.origem] || ORIGEM_LABEL.outro}</td>
                       <td>{l.vaga_id ? vagaNome(l.vaga_id) : '—'}</td>
                       <td className="row-sub">{l.localidade || '—'}</td>
