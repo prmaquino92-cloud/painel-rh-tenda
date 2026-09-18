@@ -14,13 +14,50 @@ function isProximos7(iso) {
   return diff >= 0 && diff <= 7;
 }
 
-export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoas, unidades }) {
+// Formulário inline pra reagendar — troca a data/horário da entrevista (e move o evento no
+// Google Agenda, se houver, mantendo o mesmo link de Meet).
+function ReagendarForm({ entrevista, onCancel }) {
+  return (
+    <tr>
+      <td colSpan={7} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+        <form method="POST" action={`/api/entrevistas/${entrevista.id}/reagendar`} style={{ padding: '14px 16px' }}>
+          <div className="field-row">
+            <div className="field">
+              <label>Nova data</label>
+              <input type="date" name="data" defaultValue={entrevista.data} required />
+            </div>
+            <div className="field">
+              <label>Novo horário</label>
+              <input type="time" name="hora" defaultValue={entrevista.hora?.slice(0, 5)} required />
+            </div>
+          </div>
+          <div className="hint">
+            {entrevista.google_event_id
+              ? 'Atualiza a data/horário aqui e no evento correspondente na sua Google Agenda (o link do Meet, se houver, continua o mesmo).'
+              : 'Atualiza a data/horário aqui no painel.'}
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Salvar novo horário
+            </button>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
+export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoas, unidades, erro }) {
   const [showForm, setShowForm] = useState(false);
   const [tipo, setTipo] = useState('pontual');
   const [mostrarRealizadas, setMostrarRealizadas] = useState(false);
+  const [reagendandoId, setReagendandoId] = useState(null);
   const pessoaById = (id) => pessoas.find((p) => p.id === id);
   const unidadeById = (id) => unidades.find((u) => u.id === id);
-  const pendentes = entrevistas.filter((e) => e.status !== 'realizada');
+  const pendentes = entrevistas.filter((e) => !['realizada', 'cancelada'].includes(e.status));
   const visiveis = mostrarRealizadas ? entrevistas : pendentes;
 
   return (
@@ -68,6 +105,12 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
         </div>
       </div>
 
+      {erro ? (
+        <div className="note" style={{ marginBottom: 18 }}>
+          Não foi possível concluir a ação. Confira os dados e tente de novo.
+        </div>
+      ) : null}
+
       <div className="section-head">
         <h2>Entrevistas vinculadas</h2>
         <p>Data, candidato, vaga e local/acesso de cada etapa</p>
@@ -76,7 +119,7 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
         <div className="card-pad" style={{ paddingBottom: 0, display: 'flex', justifyContent: 'flex-end' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.3, color: 'var(--ink-soft)', fontWeight: 400 }}>
             <input type="checkbox" checked={mostrarRealizadas} onChange={(e) => setMostrarRealizadas(e.target.checked)} />
-            Mostrar entrevistas já realizadas
+            Mostrar entrevistas realizadas e canceladas
           </label>
         </div>
         <div className="table-wrap">
@@ -94,6 +137,9 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
             </thead>
             <tbody>
               {visiveis.map((e) => {
+                if (reagendandoId === e.id) {
+                  return <ReagendarForm key={e.id} entrevista={e} onCancel={() => setReagendandoId(null)} />;
+                }
                 const presencial = e.tipo === 'presencial';
                 const gerente = presencial ? pessoaById(e.gerente_id) : null;
                 const unidade = presencial ? unidadeById(e.unidade_id) : null;
@@ -145,18 +191,41 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
                         </span>
                       )}
                     </td>
-                    <td>
+                    <td style={{ maxWidth: 190 }}>
                       {e.status === 'realizada' ? (
                         <span className="pill pill-success">
                           <span className="pill-dot" />
                           Realizada
                         </span>
+                      ) : e.status === 'cancelada' ? (
+                        <span className="pill pill-danger">
+                          <span className="pill-dot" />
+                          Cancelada
+                        </span>
                       ) : (
-                        <form method="POST" action={`/api/entrevistas/${e.id}/realizada`}>
-                          <button className="btn btn-ghost btn-sm" type="submit">
-                            Marcar como realizada
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <form method="POST" action={`/api/entrevistas/${e.id}/realizada`}>
+                            <button className="btn btn-ghost btn-sm" type="submit">
+                              Marcar como realizada
+                            </button>
+                          </form>
+                          <button className="btn btn-outline btn-sm" type="button" onClick={() => setReagendandoId(e.id)}>
+                            Reagendar
                           </button>
-                        </form>
+                          <form
+                            method="POST"
+                            action={`/api/entrevistas/${e.id}/cancelar`}
+                            onSubmit={(ev) => {
+                              if (!window.confirm('Cancelar essa entrevista? Se houver evento na sua Google Agenda, ele também será removido.')) {
+                                ev.preventDefault();
+                              }
+                            }}
+                          >
+                            <button className="btn btn-ghost btn-sm" type="submit" style={{ color: 'var(--danger)' }}>
+                              Cancelar
+                            </button>
+                          </form>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -287,5 +356,7 @@ export async function getServerSideProps(context) {
     getPessoas(),
     getUnidades(),
   ]);
-  return { props: { entrevistas, bloqueios, googleConectado: google.conectado, pessoas, unidades } };
+  return {
+    props: { entrevistas, bloqueios, googleConectado: google.conectado, pessoas, unidades, erro: context.query.erro === '1' },
+  };
 }
