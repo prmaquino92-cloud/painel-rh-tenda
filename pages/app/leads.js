@@ -518,10 +518,14 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                           '—'
                         )}
                       </td>
-                      <td className="row-sub">{l.email || '—'}</td>
+                      <td className="row-sub" style={{ maxWidth: 170, overflowWrap: 'break-word' }}>
+                        {l.email || '—'}
+                      </td>
                       <td className="row-sub">{ORIGEM_LABEL[l.origem] || ORIGEM_LABEL.outro}</td>
-                      <td>{l.vaga_id ? vagaNome(l.vaga_id) : '—'}</td>
-                      <td className="row-sub">{l.localidade || '—'}</td>
+                      <td style={{ maxWidth: 140, overflowWrap: 'break-word' }}>{l.vaga_id ? vagaNome(l.vaga_id) : '—'}</td>
+                      <td className="row-sub" style={{ maxWidth: 130, overflowWrap: 'break-word' }}>
+                        {l.localidade || '—'}
+                      </td>
                       <td>
                         <span className={`pill ${st.cls}`}>
                           <span className="pill-dot" />
@@ -537,7 +541,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                         ) : null}
                       </td>
                       <td className="row-sub">{fmtData(l.criado_em?.slice(0, 10))}</td>
-                      <td>
+                      <td style={{ maxWidth: 260 }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
                           {l.status === 'convertido' ? (
                             <div className="link-box" style={{ maxWidth: 260 }}>
