@@ -470,17 +470,17 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
           {leads.length === 0 ? (
             <div className="empty">Nenhum lead cadastrado ainda.</div>
           ) : (
-            <table>
+            <table className="table-compact">
               <thead>
                 <tr>
                   <th>Lead</th>
                   <th>Telefone</th>
                   <th>E-mail</th>
                   <th>Origem</th>
-                  <th>Vaga de interesse</th>
+                  <th>Vaga</th>
                   <th>Localidade</th>
                   <th>Status</th>
-                  <th>Cadastrado</th>
+                  <th>Cadastro</th>
                   <th />
                 </tr>
               </thead>
@@ -522,8 +522,8 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                         {l.email || '—'}
                       </td>
                       <td className="row-sub">{ORIGEM_LABEL[l.origem] || ORIGEM_LABEL.outro}</td>
-                      <td style={{ maxWidth: 140, overflowWrap: 'break-word' }}>{l.vaga_id ? vagaNome(l.vaga_id) : '—'}</td>
-                      <td className="row-sub" style={{ maxWidth: 130, overflowWrap: 'break-word' }}>
+                      <td style={{ maxWidth: 110, overflowWrap: 'break-word' }}>{l.vaga_id ? vagaNome(l.vaga_id) : '—'}</td>
+                      <td className="row-sub" style={{ maxWidth: 110, overflowWrap: 'break-word' }}>
                         {l.localidade || '—'}
                       </td>
                       <td>
@@ -541,10 +541,10 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                         ) : null}
                       </td>
                       <td className="row-sub">{fmtData(l.criado_em?.slice(0, 10))}</td>
-                      <td style={{ maxWidth: 260 }}>
+                      <td style={{ maxWidth: 230 }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
                           {l.status === 'convertido' ? (
-                            <div className="link-box" style={{ maxWidth: 260 }}>
+                            <div className="link-box" style={{ maxWidth: 230 }}>
                               <code>{`${baseUrl}/p/candidatura/${l.vaga_id}?lead=${l.token}`}</code>
                               <a
                                 className="btn btn-ghost btn-sm"
