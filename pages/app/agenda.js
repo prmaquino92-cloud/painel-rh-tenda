@@ -6,6 +6,14 @@ import { getGoogleStatus } from '../../lib/google';
 import { DIA_SEMANA_LABEL, fmtData } from '../../lib/domain';
 import { Icon } from '../../components/icons';
 
+function linkWhatsapp(telefone) {
+  if (!telefone) return null;
+  const digitos = telefone.replace(/\D/g, '');
+  if (!digitos) return null;
+  const comCodigoPais = digitos.startsWith('55') ? digitos : `55${digitos}`;
+  return `https://wa.me/${comCodigoPais}`;
+}
+
 function isProximos7(iso) {
   const d = new Date(`${iso}T00:00:00`);
   const hoje = new Date();
@@ -19,7 +27,7 @@ function isProximos7(iso) {
 function ReagendarForm({ entrevista, onCancel }) {
   return (
     <tr>
-      <td colSpan={7} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+      <td colSpan={8} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
         <form method="POST" action={`/api/entrevistas/${entrevista.id}/reagendar`} style={{ padding: '14px 16px' }}>
           <div className="field-row">
             <div className="field">
@@ -128,6 +136,7 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
               <tr>
                 <th>Data e horário</th>
                 <th>Candidato</th>
+                <th>Telefone</th>
                 <th>Vaga</th>
                 <th>Etapa</th>
                 <th>Modalidade</th>
@@ -149,6 +158,24 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
                       {fmtData(e.data)} · {e.hora?.slice(0, 5)}
                     </td>
                     <td>{e.candidatos?.nome || '—'}</td>
+                    <td className="row-sub">
+                      {e.candidatos?.telefone ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span>{e.candidatos.telefone}</span>
+                          <a
+                            href={linkWhatsapp(e.candidatos.telefone)}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Chamar no WhatsApp"
+                            style={{ display: 'inline-flex' }}
+                          >
+                            {Icon.whatsapp({ className: 'ic' })}
+                          </a>
+                        </div>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td className="row-sub">{e.vagas?.titulo || '—'}</td>
                     <td className="row-sub">{(e.rodada || 1) === 2 ? '2ª entrevista' : '1ª entrevista'}</td>
                     <td>
@@ -202,6 +229,31 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
                           <span className="pill-dot" />
                           Cancelada
                         </span>
+                      ) : e.status === 'nao_compareceu' ? (
+                        <div>
+                          <span className="pill pill-warning" style={{ marginBottom: 6 }}>
+                            <span className="pill-dot" />
+                            Não compareceu
+                          </span>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            <button className="btn btn-outline btn-sm" type="button" onClick={() => setReagendandoId(e.id)}>
+                              Reagendar
+                            </button>
+                            <form
+                              method="POST"
+                              action={`/api/entrevistas/${e.id}/cancelar`}
+                              onSubmit={(ev) => {
+                                if (!window.confirm('Descartar esse candidato? A entrevista fica marcada como cancelada.')) {
+                                  ev.preventDefault();
+                                }
+                              }}
+                            >
+                              <button className="btn btn-ghost btn-sm" type="submit" style={{ color: 'var(--danger)' }}>
+                                Descartar
+                              </button>
+                            </form>
+                          </div>
+                        </div>
                       ) : (
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <form method="POST" action={`/api/entrevistas/${e.id}/realizada`}>
@@ -212,6 +264,23 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
                           <button className="btn btn-outline btn-sm" type="button" onClick={() => setReagendandoId(e.id)}>
                             Reagendar
                           </button>
+                          <form
+                            method="POST"
+                            action={`/api/entrevistas/${e.id}/nao-compareceu`}
+                            onSubmit={(ev) => {
+                              if (
+                                !window.confirm(
+                                  'Marcar como "não compareceu"? O candidato recebe um e-mail avisando que perdeu o horário, com um link para ele mesmo remarcar.'
+                                )
+                              ) {
+                                ev.preventDefault();
+                              }
+                            }}
+                          >
+                            <button className="btn btn-ghost btn-sm" type="submit">
+                              Não compareceu
+                            </button>
+                          </form>
                           <form
                             method="POST"
                             action={`/api/entrevistas/${e.id}/cancelar`}
@@ -233,7 +302,7 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
               })}
               {visiveis.length === 0 ? (
                 <tr>
-                  <td colSpan={7}>
+                  <td colSpan={8}>
                     <div className="empty">
                       {mostrarRealizadas ? 'Nenhuma entrevista agendada ainda.' : 'Nenhuma entrevista pendente — tudo em dia.'}
                     </div>

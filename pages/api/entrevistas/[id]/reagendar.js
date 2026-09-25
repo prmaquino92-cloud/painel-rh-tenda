@@ -27,7 +27,13 @@ export default async function handler(req, res) {
   const sb = supabaseAdmin();
   const { data: entrevista } = await sb.from('entrevistas').select('google_event_id').eq('id', id).maybeSingle();
 
-  const { error } = await sb.from('entrevistas').update({ data, hora }).eq('id', id);
+  // reagendar sempre volta a entrevista pro status "agendada" (cobre o caso de reagendar uma
+  // que estava com "não compareceu" ou "cancelada") e invalida um eventual link de remarcação
+  // que o candidato tivesse recebido, já que agora foi remarcada por aqui.
+  const { error } = await sb
+    .from('entrevistas')
+    .update({ data, hora, status: 'agendada', reagendamento_token: null })
+    .eq('id', id);
   if (error) {
     res.status(500).send(error.message);
     return;
