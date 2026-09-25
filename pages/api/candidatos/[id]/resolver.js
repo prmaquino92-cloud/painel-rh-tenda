@@ -22,7 +22,10 @@ export default async function handler(req, res) {
   }
 
   const sb = supabaseAdmin();
-  const { error } = await sb.from('candidatos').update({ status: decisao }).eq('id', id);
+  const { error } = await sb
+    .from('candidatos')
+    .update({ status: decisao, atualizado_em: new Date().toISOString() })
+    .eq('id', id);
   if (error) {
     res.status(500).send(error.message);
     return;

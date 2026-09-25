@@ -19,6 +19,7 @@ const NAV = [
       { id: 'leads', label: 'Leads', href: '/app/leads', icon: 'funnel' },
       { id: 'candidatos', label: 'Candidatos', href: '/app/candidatos', icon: 'candidate' },
       { id: 'agenda', label: 'Agenda de entrevistas', href: '/app/agenda', icon: 'calendar' },
+      { id: 'relatorios', label: 'Relatórios', href: '/app/relatorios', icon: 'report' },
     ],
   },
   {

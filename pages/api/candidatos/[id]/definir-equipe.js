@@ -62,10 +62,14 @@ export default async function handler(req, res) {
     pessoaId = pessoa.id;
   }
 
-  const { error: errUpd } = await sb
-    .from('candidatos')
-    .update({ pessoa_id: pessoaId, status: 'contratado' })
-    .eq('id', id);
+  // só carimba atualizado_em na primeira contratação — reabrir esse formulário depois só pra
+  // trocar a equipe do corretor não deve mexer na data de contratação pro relatório de produção
+  const payload = { pessoa_id: pessoaId, status: 'contratado' };
+  if (candidato.status !== 'contratado') {
+    payload.atualizado_em = new Date().toISOString();
+  }
+
+  const { error: errUpd } = await sb.from('candidatos').update(payload).eq('id', id);
   if (errUpd) {
     res.status(500).send(errUpd.message);
     return;

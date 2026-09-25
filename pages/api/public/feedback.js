@@ -49,7 +49,7 @@ export default async function handler(req, res) {
   };
   await db
     .from('candidatos')
-    .update({ status: STATUS_POR_DECISAO[decisao] })
+    .update({ status: STATUS_POR_DECISAO[decisao], atualizado_em: new Date().toISOString() })
     .eq('id', entrevista.candidato_id);
 
   res.status(200).json({ ok: true });

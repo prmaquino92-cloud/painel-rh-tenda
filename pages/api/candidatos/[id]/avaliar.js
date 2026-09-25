@@ -32,7 +32,7 @@ export default async function handler(req, res) {
   if (decisao === 'declinar') {
     const { error } = await sb
       .from('candidatos')
-      .update({ parecer: parecer || null, status: 'declinado' })
+      .update({ parecer: parecer || null, status: 'declinado', atualizado_em: new Date().toISOString() })
       .eq('id', id);
     if (error) {
       res.status(500).send(error.message);
@@ -57,7 +57,7 @@ export default async function handler(req, res) {
 
   const { error: errUpd } = await sb
     .from('candidatos')
-    .update({ parecer: parecer || null, status: 'segunda_entrevista_agendada' })
+    .update({ parecer: parecer || null, status: 'segunda_entrevista_agendada', atualizado_em: new Date().toISOString() })
     .eq('id', id);
   if (errUpd) {
     res.status(500).send(errUpd.message);
