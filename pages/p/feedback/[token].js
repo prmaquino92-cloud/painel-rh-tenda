@@ -49,7 +49,15 @@ export default function Feedback({ entrevista, candidatoNome, vagaTitulo, gerent
           <h2 style={{ marginTop: 0 }}>Obrigado, {gerenteNome || 'gerente'}!</h2>
           <p>
             Seu feedback sobre a entrevista com <b>{candidatoNome}</b> já foi registrado
-            {decisaoFinal ? (decisaoFinal === 'aprovado' ? ' — candidato aprovado.' : ' — candidato reprovado.') : '.'}
+            {decisaoFinal === 'aprovado'
+              ? ' — candidato aprovado.'
+              : decisaoFinal === 'reprovado'
+              ? ' — candidato reprovado.'
+              : decisaoFinal === 'avaliar_rh'
+              ? ' — o RH vai avaliar junto com você antes da decisão final.'
+              : decisaoFinal === 'aguardar_candidato'
+              ? ' — vamos aguardar a decisão do candidato.'
+              : '.'}
           </p>
           {textoFinal ? (
             <div className="note" style={{ marginTop: 12, textAlign: 'left' }}>
@@ -109,7 +117,7 @@ export default function Feedback({ entrevista, candidatoNome, vagaTitulo, gerent
           </div>
           <div className="field">
             <label>Decisão</label>
-            <div style={{ display: 'flex', gap: 18, fontSize: 13, margin: '4px 0 10px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, margin: '4px 0 10px' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
                 <input type="radio" name="decisao" value="aprovado" checked={decisao === 'aprovado'} onChange={() => setDecisao('aprovado')} />
                 Aprovar candidato
@@ -117,6 +125,20 @@ export default function Feedback({ entrevista, candidatoNome, vagaTitulo, gerent
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
                 <input type="radio" name="decisao" value="reprovado" checked={decisao === 'reprovado'} onChange={() => setDecisao('reprovado')} />
                 Reprovar candidato
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
+                <input type="radio" name="decisao" value="avaliar_rh" checked={decisao === 'avaliar_rh'} onChange={() => setDecisao('avaliar_rh')} />
+                Preciso avaliar junto com o RH antes de decidir
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
+                <input
+                  type="radio"
+                  name="decisao"
+                  value="aguardar_candidato"
+                  checked={decisao === 'aguardar_candidato'}
+                  onChange={() => setDecisao('aguardar_candidato')}
+                />
+                Aguardar uma definição do candidato
               </label>
             </div>
           </div>

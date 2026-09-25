@@ -347,6 +347,22 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                                 ) : (
                                   <div className="row-sub" style={{ marginTop: 3 }}>Aguardando feedback do gerente</div>
                                 )}
+                                {c.status === 'aguardando_rh' || c.status === 'aguardando_candidato' ? (
+                                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                                    <form method="POST" action={`/api/candidatos/${c.id}/resolver`}>
+                                      <input type="hidden" name="decisao" value="aprovado" />
+                                      <button className="btn btn-outline btn-sm" type="submit">
+                                        Aprovar
+                                      </button>
+                                    </form>
+                                    <form method="POST" action={`/api/candidatos/${c.id}/resolver`}>
+                                      <input type="hidden" name="decisao" value="declinado" />
+                                      <button className="btn btn-ghost btn-sm" type="submit" style={{ color: 'var(--danger)' }}>
+                                        Reprovar
+                                      </button>
+                                    </form>
+                                  </div>
+                                ) : null}
                               </div>
                             ) : c.status === 'declinado' ? (
                               <div>Descartado após a 1ª entrevista.</div>
@@ -367,6 +383,10 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                               ? 'Aguardando 2ª entrevista e feedback do gerente'
                               : c.status === 'declinado'
                               ? 'Candidato descartado'
+                              : c.status === 'aguardando_rh'
+                              ? 'Aguardando sua decisão (RH)'
+                              : c.status === 'aguardando_candidato'
+                              ? 'Aguardando decisão do candidato'
                               : 'Aguardando avaliação'}
                           </span>
                         ) : pessoaCorretor ? (

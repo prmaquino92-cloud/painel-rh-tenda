@@ -3,7 +3,7 @@ import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
 import { getEntrevistasAgendadas, getBloqueios, getPessoas, getUnidades } from '../../lib/data';
 import { getGoogleStatus } from '../../lib/google';
-import { DIA_SEMANA_LABEL, fmtData } from '../../lib/domain';
+import { DIA_SEMANA_LABEL, FEEDBACK_DECISAO, fmtData } from '../../lib/domain';
 import { Icon } from '../../components/icons';
 
 function linkWhatsapp(telefone) {
@@ -198,9 +198,9 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
                             {gerente?.nome || 'Gerente não definido'} · {unidade?.nome || 'Unidade não definida'}
                           </div>
                           {e.feedback_em ? (
-                            <span className={`pill ${e.feedback_decisao === 'aprovado' ? 'pill-success' : 'pill-danger'}`} style={{ marginTop: 4 }}>
+                            <span className={`pill ${FEEDBACK_DECISAO[e.feedback_decisao]?.cls || 'pill-muted'}`} style={{ marginTop: 4 }}>
                               <span className="pill-dot" />
-                              {e.feedback_decisao === 'aprovado' ? 'Gerente aprovou' : 'Gerente reprovou'}
+                              {FEEDBACK_DECISAO[e.feedback_decisao]?.label || 'Feedback recebido'}
                             </span>
                           ) : (
                             <span style={{ marginTop: 4, display: 'inline-block' }}>Aguardando feedback do gerente</span>

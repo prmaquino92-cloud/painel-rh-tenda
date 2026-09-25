@@ -7,7 +7,8 @@ export default async function handler(req, res) {
   }
   const { token, decisao, texto } = req.body || {};
 
-  if (!token || (decisao !== 'aprovado' && decisao !== 'reprovado')) {
+  const DECISOES_VALIDAS = ['aprovado', 'reprovado', 'avaliar_rh', 'aguardar_candidato'];
+  if (!token || !DECISOES_VALIDAS.includes(decisao)) {
     res.status(400).json({ error: 'Dados incompletos.' });
     return;
   }
@@ -38,10 +39,17 @@ export default async function handler(req, res) {
     return;
   }
 
-  // reflete a decisão do gerente no status do candidato
+  // reflete a decisão do gerente no status do candidato — "avaliar_rh" e "aguardar_candidato"
+  // não fecham o processo sozinhos: ficam em aberto até você (RH) bater o martelo em Candidatos
+  const STATUS_POR_DECISAO = {
+    aprovado: 'aprovado',
+    reprovado: 'declinado',
+    avaliar_rh: 'aguardando_rh',
+    aguardar_candidato: 'aguardando_candidato',
+  };
   await db
     .from('candidatos')
-    .update({ status: decisao === 'aprovado' ? 'aprovado' : 'declinado' })
+    .update({ status: STATUS_POR_DECISAO[decisao] })
     .eq('id', entrevista.candidato_id);
 
   res.status(200).json({ ok: true });

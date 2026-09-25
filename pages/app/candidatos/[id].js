@@ -201,6 +201,22 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unida
                         Aguardando feedback do gerente.
                       </p>
                     )}
+                    {candidato.status === 'aguardando_rh' || candidato.status === 'aguardando_candidato' ? (
+                      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <form method="POST" action={`/api/candidatos/${candidato.id}/resolver`}>
+                          <input type="hidden" name="decisao" value="aprovado" />
+                          <button className="btn btn-outline btn-sm" type="submit">
+                            Aprovar
+                          </button>
+                        </form>
+                        <form method="POST" action={`/api/candidatos/${candidato.id}/resolver`}>
+                          <input type="hidden" name="decisao" value="declinado" />
+                          <button className="btn btn-ghost btn-sm" type="submit" style={{ color: 'var(--danger)' }}>
+                            Reprovar
+                          </button>
+                        </form>
+                      </div>
+                    ) : null}
                   </div>
                 </>
               ) : (
@@ -224,6 +240,10 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unida
                 ? 'Aguardando a 2ª entrevista e o feedback do gerente.'
                 : candidato.status === 'declinado'
                 ? 'Candidato descartado — não avança para contratação.'
+                : candidato.status === 'aguardando_rh'
+                ? 'Aguardando sua decisão (RH) — veja o feedback do gerente acima.'
+                : candidato.status === 'aguardando_candidato'
+                ? 'Aguardando decisão do candidato — veja o feedback do gerente acima.'
                 : 'Aguardando avaliação da 1ª entrevista.'}
             </p>
           ) : pessoaCorretor ? (
