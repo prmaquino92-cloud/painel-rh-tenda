@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   const { id } = req.query;
   const { parecer, decisao, gerente_id, unidade_id, data, hora } = req.body || {};
 
-  if (decisao !== 'segunda_entrevista' && decisao !== 'declinar') {
+  if (decisao !== 'segunda_entrevista' && decisao !== 'declinar' && decisao !== 'aprovado_direto') {
     res.writeHead(302, { Location: '/app/candidatos?erro=1' });
     res.end();
     return;
@@ -36,6 +36,48 @@ export default async function handler(req, res) {
       .eq('id', id);
     if (error) {
       res.status(500).send(error.message);
+      return;
+    }
+    res.writeHead(302, { Location: '/app/candidatos' });
+    res.end();
+    return;
+  }
+
+  // decisao === 'aprovado_direto' — as duas entrevistas já aconteceram fora do painel (ex.:
+  // entrevistado e aprovado num evento, na hora, por você e pelo gerente) e não faz sentido
+  // reabrir o fluxo normal (agendar 2ª entrevista, esperar link de feedback etc.). Registra a
+  // 2ª entrevista já como realizada e aprovada, e o candidato já sai liberado pra contratação.
+  if (decisao === 'aprovado_direto') {
+    if (!gerente_id || !unidade_id || !data || !hora) {
+      res.writeHead(302, { Location: '/app/candidatos?erro=1' });
+      res.end();
+      return;
+    }
+    const agora = new Date().toISOString();
+    const { error: errUpdAprovado } = await sb
+      .from('candidatos')
+      .update({ parecer: parecer || null, status: 'aprovado', atualizado_em: agora })
+      .eq('id', id);
+    if (errUpdAprovado) {
+      res.status(500).send(errUpdAprovado.message);
+      return;
+    }
+    const { error: errEntAprovado } = await sb.from('entrevistas').insert({
+      candidato_id: id,
+      vaga_id: candidato.vaga_id,
+      data,
+      hora,
+      status: 'realizada',
+      tipo: 'presencial',
+      rodada: 2,
+      gerente_id,
+      unidade_id,
+      feedback_decisao: 'aprovado',
+      feedback_texto: 'Entrevista e aprovação presenciais (fora do painel) — registrado retroativamente pelo RH.',
+      feedback_em: agora,
+    });
+    if (errEntAprovado) {
+      res.status(500).send(errEntAprovado.message);
       return;
     }
     res.writeHead(302, { Location: '/app/candidatos' });

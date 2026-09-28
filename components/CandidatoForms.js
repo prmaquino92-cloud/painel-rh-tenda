@@ -4,6 +4,7 @@ import { useState } from 'react';
 // (uma linha de tabela na lista de Candidatos, ou um card simples na ficha do candidato).
 export function AvaliarForm({ candidato, gerentes, unidades, unidadeSugeridaId, onCancel }) {
   const [decisao, setDecisao] = useState('segunda_entrevista');
+  const precisaGerenteEUnidade = decisao === 'segunda_entrevista' || decisao === 'aprovado_direto';
   return (
     <form method="POST" action={`/api/candidatos/${candidato.id}/avaliar`} style={{ padding: '14px 16px' }}>
       <div className="field">
@@ -12,7 +13,7 @@ export function AvaliarForm({ candidato, gerentes, unidades, unidadeSugeridaId, 
       </div>
       <div className="field">
         <label>Próximo passo</label>
-        <div style={{ display: 'flex', gap: 18, fontSize: 13, margin: '4px 0 10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, margin: '4px 0 10px' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
             <input
               type="radio"
@@ -27,9 +28,19 @@ export function AvaliarForm({ candidato, gerentes, unidades, unidadeSugeridaId, 
             <input type="radio" name="decisao" value="declinar" checked={decisao === 'declinar'} onChange={() => setDecisao('declinar')} />
             Descartar candidato
           </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
+            <input
+              type="radio"
+              name="decisao"
+              value="aprovado_direto"
+              checked={decisao === 'aprovado_direto'}
+              onChange={() => setDecisao('aprovado_direto')}
+            />
+            Já foi entrevistado(a) e aprovado(a) pelo gerente fora do painel (ex.: evento) — pular direto para aprovado
+          </label>
         </div>
       </div>
-      {decisao === 'segunda_entrevista' ? (
+      {precisaGerenteEUnidade ? (
         <>
           <div className="field-row">
             <div className="field">
@@ -61,14 +72,20 @@ export function AvaliarForm({ candidato, gerentes, unidades, unidadeSugeridaId, 
           </div>
           <div className="field-row">
             <div className="field">
-              <label>Data</label>
+              <label>{decisao === 'aprovado_direto' ? 'Data da entrevista/evento' : 'Data'}</label>
               <input type="date" name="data" required />
             </div>
             <div className="field">
-              <label>Horário</label>
+              <label>{decisao === 'aprovado_direto' ? 'Horário (aproximado)' : 'Horário'}</label>
               <input type="time" name="hora" required />
             </div>
           </div>
+          {decisao === 'aprovado_direto' ? (
+            <div className="hint">
+              Isso registra a 2ª entrevista como já realizada e aprovada (sem gerar convite no Google Agenda nem link de feedback pro
+              gerente) e já libera o candidato para "Confirmar contratação".
+            </div>
+          ) : null}
         </>
       ) : null}
       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
