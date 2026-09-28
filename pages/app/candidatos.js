@@ -434,9 +434,27 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                             </button>
                           </div>
                         ) : (
-                          <button className="btn btn-outline btn-sm" type="button" onClick={() => setEquipeId(c.id)}>
-                            Confirmar contratação
-                          </button>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            <button className="btn btn-outline btn-sm" type="button" onClick={() => setEquipeId(c.id)}>
+                              Confirmar contratação
+                            </button>
+                            <form
+                              method="POST"
+                              action={`/api/candidatos/${c.id}/resolver`}
+                              onSubmit={(ev) => {
+                                if (
+                                  !window.confirm('Reprovar esse candidato? Ele estava aprovado, mas a contratação ainda não foi confirmada.')
+                                ) {
+                                  ev.preventDefault();
+                                }
+                              }}
+                            >
+                              <input type="hidden" name="decisao" value="declinado" />
+                              <button className="btn btn-ghost btn-sm" type="submit" style={{ color: 'var(--danger)' }}>
+                                Reprovar
+                              </button>
+                            </form>
+                          </div>
                         )}
                       </td>
                       <td className="row-sub">{fmtData(c.criado_em?.slice(0, 10))}</td>

@@ -268,9 +268,25 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unida
               ) : null}
             </>
           ) : !definindoEquipe ? (
-            <button className="btn btn-outline btn-sm" type="button" onClick={() => setDefinindoEquipe(true)}>
-              Confirmar contratação
-            </button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-outline btn-sm" type="button" onClick={() => setDefinindoEquipe(true)}>
+                Confirmar contratação
+              </button>
+              <form
+                method="POST"
+                action={`/api/candidatos/${candidato.id}/resolver`}
+                onSubmit={(ev) => {
+                  if (!window.confirm('Reprovar esse candidato? Ele estava aprovado, mas a contratação ainda não foi confirmada.')) {
+                    ev.preventDefault();
+                  }
+                }}
+              >
+                <input type="hidden" name="decisao" value="declinado" />
+                <button className="btn btn-ghost btn-sm" type="submit" style={{ color: 'var(--danger)' }}>
+                  Reprovar
+                </button>
+              </form>
+            </div>
           ) : null}
           {definindoEquipe ? (
             <div style={{ marginTop: 12, background: 'var(--surface-2, #f7f7fa)', borderRadius: 10 }}>
