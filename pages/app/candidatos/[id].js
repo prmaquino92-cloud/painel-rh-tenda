@@ -30,6 +30,9 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unida
   const jaAvaliado = Boolean(candidato.parecer);
   const podeAvaliar = Boolean(candidato.entrevista) && !jaAvaliado;
   const rodada2 = candidato.entrevistaRodada2;
+  // 2ª entrevista já aconteceu mas o gerente nunca respondeu pela plataforma — libera o
+  // Aprovar/Reprovar direto pro RH decidir, sem depender do feedback dele.
+  const gerenteNaoAvaliou = rodada2?.status === 'realizada' && !rodada2?.feedback_em;
 
   return (
     <Layout active="candidatos" crumb="Recrutamento" title={candidato.nome}>
@@ -196,12 +199,16 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unida
                           Recebido em {fmtData(rodada2.feedback_em.slice(0, 10))} · {rodada2.feedback_em.slice(11, 16)}
                         </p>
                       </>
+                    ) : gerenteNaoAvaliou ? (
+                      <p className="row-sub" style={{ margin: 0, color: 'var(--danger)' }}>
+                        Gerente não avaliou — decida você mesmo abaixo.
+                      </p>
                     ) : (
                       <p className="row-sub" style={{ margin: 0 }}>
                         Aguardando feedback do gerente.
                       </p>
                     )}
-                    {candidato.status === 'aguardando_rh' || candidato.status === 'aguardando_candidato' ? (
+                    {candidato.status === 'aguardando_rh' || candidato.status === 'aguardando_candidato' || gerenteNaoAvaliou ? (
                       <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                         <form method="POST" action={`/api/candidatos/${candidato.id}/resolver`}>
                           <input type="hidden" name="decisao" value="aprovado" />
@@ -236,7 +243,9 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unida
         <div className="card-pad">
           {candidato.status !== 'aprovado' ? (
             <p className="row-sub" style={{ margin: 0 }}>
-              {candidato.status === 'segunda_entrevista_agendada'
+              {candidato.status === 'segunda_entrevista_agendada' && gerenteNaoAvaliou
+                ? 'Gerente não avaliou — decida você mesmo acima.'
+                : candidato.status === 'segunda_entrevista_agendada'
                 ? 'Aguardando a 2ª entrevista e o feedback do gerente.'
                 : candidato.status === 'declinado'
                 ? 'Candidato descartado — não avança para contratação.'

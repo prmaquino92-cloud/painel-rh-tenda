@@ -162,13 +162,21 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
   const [avaliarId, setAvaliarId] = useState(null);
   const [vagaFormId, setVagaFormId] = useState(null);
   const [showManual, setShowManual] = useState(false);
+  const [soSemRetorno, setSoSemRetorno] = useState(false);
   const vagaTitulo = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
   const vagaById = (id) => vagas.find((v) => v.id === id);
   const pessoaById = (id) => pessoas.find((p) => p.id === id);
   const unidadeById = (id) => unidades.find((u) => u.id === id);
   const gerentes = pessoas.filter((p) => p.papel === 'gerente_comercial');
 
+  // Banco de candidatos "presos": já fizeram a 2ª entrevista, mas o gerente nunca deu retorno
+  // pela plataforma. Sem isso, esses candidatos ficam parados pra sempre — o RH precisa poder
+  // avaliar e fechar a decisão mesmo sem o feedback do gerente.
+  const semRetornoGerente = candidatos.filter((c) => c.entrevistaRodada2?.status === 'realizada' && !c.entrevistaRodada2?.feedback_em);
+  const idsSemRetorno = new Set(semRetornoGerente.map((c) => c.id));
+
   const filtrados = candidatos.filter((c) => {
+    if (soSemRetorno && !idsSemRetorno.has(c.id)) return false;
     if (busca && !(c.nome.toLowerCase().includes(busca.toLowerCase()) || (c.email || '').toLowerCase().includes(busca.toLowerCase()))) return false;
     if (fStatus && c.status !== fStatus) return false;
     if (fVaga && c.vaga_id !== fVaga) return false;
@@ -190,6 +198,23 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
       {erro ? (
         <div className="note" style={{ marginTop: 12 }}>
           Não foi possível salvar. Confira os campos obrigatórios e tente de novo.
+        </div>
+      ) : null}
+      {semRetornoGerente.length > 0 ? (
+        <div className="note" style={{ marginTop: 12 }}>
+          {Icon.warn({ className: 'ic' })}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span>
+              <b>
+                {semRetornoGerente.length} candidato{semRetornoGerente.length > 1 ? 's' : ''}
+              </b>{' '}
+              já {semRetornoGerente.length > 1 ? 'fizeram' : 'fez'} a 2ª entrevista, mas o gerente ainda não deu retorno pela plataforma —
+              avalie você mesmo pra não travar seu resultado.
+            </span>
+            <button className="btn btn-outline btn-sm" type="button" onClick={() => setSoSemRetorno((v) => !v)}>
+              {soSemRetorno ? 'Ver todos os candidatos' : 'Ver banco de candidatos'}
+            </button>
+          </div>
         </div>
       ) : null}
       {showManual ? <CadastroManualForm vagas={vagas} onCancel={() => setShowManual(false)} /> : null}
@@ -246,6 +271,10 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                   const vagaDaCandidatura = vagaById(c.vaga_id);
                   const jaAvaliado = Boolean(c.parecer);
                   const podeAvaliar = Boolean(c.entrevista) && !jaAvaliado;
+                  // 2ª entrevista já aconteceu mas o gerente nunca respondeu pela plataforma —
+                  // não pode travar o resultado do RH esperando indefinidamente, então libera
+                  // o Aprovar/Reprovar direto pra você mesmo decidir.
+                  const gerenteNaoAvaliou = c.entrevistaRodada2?.status === 'realizada' && !c.entrevistaRodada2?.feedback_em;
 
                   if (avaliarId === c.id) {
                     return (
@@ -344,10 +373,14 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                                       </div>
                                     ) : null}
                                   </div>
+                                ) : gerenteNaoAvaliou ? (
+                                  <div className="row-sub" style={{ marginTop: 3, color: 'var(--danger)' }}>
+                                    Gerente não avaliou — decida você mesmo abaixo
+                                  </div>
                                 ) : (
                                   <div className="row-sub" style={{ marginTop: 3 }}>Aguardando feedback do gerente</div>
                                 )}
-                                {c.status === 'aguardando_rh' || c.status === 'aguardando_candidato' ? (
+                                {c.status === 'aguardando_rh' || c.status === 'aguardando_candidato' || gerenteNaoAvaliou ? (
                                   <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                                     <form method="POST" action={`/api/candidatos/${c.id}/resolver`}>
                                       <input type="hidden" name="decisao" value="aprovado" />
@@ -379,7 +412,9 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                       <td>
                         {c.status !== 'aprovado' ? (
                           <span className="row-sub">
-                            {c.status === 'segunda_entrevista_agendada'
+                            {c.status === 'segunda_entrevista_agendada' && gerenteNaoAvaliou
+                              ? 'Gerente não avaliou — decida você mesmo'
+                              : c.status === 'segunda_entrevista_agendada'
                               ? 'Aguardando 2ª entrevista e feedback do gerente'
                               : c.status === 'declinado'
                               ? 'Candidato descartado'
