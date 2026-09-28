@@ -5,6 +5,10 @@ import { useState } from 'react';
 export function AvaliarForm({ candidato, gerentes, unidades, unidadeSugeridaId, onCancel }) {
   const [decisao, setDecisao] = useState('segunda_entrevista');
   const precisaGerenteEUnidade = decisao === 'segunda_entrevista' || decisao === 'aprovado_direto';
+  // .field input{width:100%;padding:9px 11px;...} no CSS global vale pra qualquer <input> dentro
+  // de um .field — inclusive esses radios, que sem isso ficam esticados e empurram o texto do
+  // label pro canto. Reseta só o necessário pra virar uma bolinha de radio normal.
+  const radioStyle = { width: 14, height: 14, padding: 0, border: 'none', flex: '0 0 auto' };
   return (
     <form method="POST" action={`/api/candidatos/${candidato.id}/avaliar`} style={{ padding: '14px 16px' }}>
       <div className="field">
@@ -21,11 +25,19 @@ export function AvaliarForm({ candidato, gerentes, unidades, unidadeSugeridaId, 
               value="segunda_entrevista"
               checked={decisao === 'segunda_entrevista'}
               onChange={() => setDecisao('segunda_entrevista')}
+              style={radioStyle}
             />
             Marcar 2ª entrevista presencial com o gerente
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
-            <input type="radio" name="decisao" value="declinar" checked={decisao === 'declinar'} onChange={() => setDecisao('declinar')} />
+            <input
+              type="radio"
+              name="decisao"
+              value="declinar"
+              checked={decisao === 'declinar'}
+              onChange={() => setDecisao('declinar')}
+              style={radioStyle}
+            />
             Descartar candidato
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
@@ -35,6 +47,7 @@ export function AvaliarForm({ candidato, gerentes, unidades, unidadeSugeridaId, 
               value="aprovado_direto"
               checked={decisao === 'aprovado_direto'}
               onChange={() => setDecisao('aprovado_direto')}
+              style={radioStyle}
             />
             Já foi entrevistado(a) e aprovado(a) pelo gerente fora do painel (ex.: evento) — pular direto para aprovado
           </label>
