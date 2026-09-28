@@ -205,6 +205,99 @@ function LimparDuplicados() {
   );
 }
 
+function LimparIncompletos() {
+  const [checando, setChecando] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  async function checar() {
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const r = await fetch('/api/leads/limpar-incompletos', { method: 'GET' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível verificar os leads incompletos.');
+      } else {
+        setRelatorio(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function excluir() {
+    if (!relatorio) return;
+    const ok = window.confirm(
+      `Isso vai excluir ${relatorio.incompletosParaExcluir} lead(s) sem nome, telefone ou e-mail, mantendo ${relatorio.completos} completo(s)${
+        relatorio.protegidosIncompletos ? ` e ${relatorio.protegidosIncompletos} incompleto(s) protegido(s) por já terem candidatura` : ''
+      }. Essa ação não pode ser desfeita. Confirma?`
+    );
+    if (!ok) return;
+    setExcluindo(true);
+    setErro('');
+    try {
+      const r = await fetch('/api/leads/limpar-incompletos', { method: 'POST' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível excluir os leads incompletos.');
+      } else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setExcluindo(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Mantém só os leads com nome, telefone e e-mail preenchidos — os demais (faltando qualquer um dos três) são excluídos. Leads já
+          convertidos em candidatura nunca são excluídos, mesmo incompletos.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-outline btn-sm" type="button" onClick={checar} disabled={checando || excluindo}>
+            {checando ? 'Verificando...' : 'Verificar incompletos'}
+          </button>
+          {relatorio ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={excluir} disabled={excluindo}>
+              {excluindo ? 'Excluindo...' : `Excluir ${relatorio.incompletosParaExcluir} incompleto(s)`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              Total de leads: {relatorio.totalLeads}. Completos (mantidos): {relatorio.completos}. Incompletos a excluir:{' '}
+              {relatorio.incompletosParaExcluir}.
+              {relatorio.protegidosIncompletos
+                ? ` ${relatorio.protegidosIncompletos} incompleto(s) protegido(s) por já terem candidatura — não serão excluídos.`
+                : ''}
+            </div>
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.linhasExcluidas} lead(s) incompleto(s) excluído(s) com sucesso. Recarregue a página pra ver os números
+            atualizados.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function EvoluirForm({ lead, vagas, onCancel }) {
   return (
     <tr>
@@ -269,6 +362,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showLimpar, setShowLimpar] = useState(false);
+  const [showLimparIncompletos, setShowLimparIncompletos] = useState(false);
   const [evoluindoId, setEvoluindoId] = useState(null);
   const [timelineId, setTimelineId] = useState(null);
 
@@ -319,6 +413,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
           <button className="btn btn-outline" onClick={() => setShowLimpar((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Remover duplicados
           </button>
+          <button className="btn btn-outline" onClick={() => setShowLimparIncompletos((v) => !v)}>
+            {Icon.plus({ className: 'ic' })} Manter só completos
+          </button>
           <button className="btn btn-primary" onClick={() => setShowForm((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Cadastrar lead
           </button>
@@ -327,6 +424,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
 
       {showImport ? <ImportarLeads /> : null}
       {showLimpar ? <LimparDuplicados /> : null}
+      {showLimparIncompletos ? <LimparIncompletos /> : null}
 
       {showForm ? (
         <div className="card form-card" style={{ marginTop: 16 }}>

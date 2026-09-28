@@ -18,8 +18,15 @@ function normNome(s) {
     .replace(/\s+/g, ' ');
 }
 
+// Canonicaliza número de telefone brasileiro pra comparar duplicados mesmo quando a
+// formatação varia entre importações (com/sem "+55" na frente, com/sem o 9º dígito que foi
+// adicionado aos celulares) — sem isso, o mesmo contato cadastrado de formas diferentes nunca
+// batia como duplicado e o botão parecia "não excluir nada".
 function normTelefone(s) {
-  return (s || '').toString().replace(/\D/g, '');
+  let d = (s || '').toString().replace(/\D/g, '');
+  if (d.length > 11 && d.startsWith('55')) d = d.slice(2); // remove DDI Brasil
+  if (d.length === 11 && d[2] === '9') d = d.slice(0, 2) + d.slice(3); // remove o 9º dígito extra do celular
+  return d;
 }
 
 const PRIORIDADE_STATUS = { convertido: 3, declinado: 2, sem_contato: 1, novo: 0 };
