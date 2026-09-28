@@ -273,8 +273,18 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                   const podeAvaliar = Boolean(c.entrevista) && !jaAvaliado;
                   // 2ª entrevista já aconteceu mas o gerente nunca respondeu pela plataforma —
                   // não pode travar o resultado do RH esperando indefinidamente, então libera
-                  // o Aprovar/Reprovar direto pra você mesmo decidir.
-                  const gerenteNaoAvaliou = c.entrevistaRodada2?.status === 'realizada' && !c.entrevistaRodada2?.feedback_em;
+                  // o Aprovar/Reprovar direto pra você mesmo decidir. Exige status ainda em
+                  // "segunda_entrevista_agendada": o /resolver não mexe em entrevistas.feedback_em,
+                  // então sem esse check os botões continuavam aparecendo pra sempre mesmo depois
+                  // de você já ter aprovado/reprovado o candidato por aqui.
+                  const gerenteNaoAvaliou =
+                    c.entrevistaRodada2?.status === 'realizada' &&
+                    !c.entrevistaRodada2?.feedback_em &&
+                    c.status === 'segunda_entrevista_agendada';
+                  const decididoSemGerente =
+                    c.entrevistaRodada2?.status === 'realizada' &&
+                    !c.entrevistaRodada2?.feedback_em &&
+                    (c.status === 'aprovado' || c.status === 'declinado' || c.status === 'contratado');
 
                   if (avaliarId === c.id) {
                     return (
@@ -376,6 +386,10 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                                 ) : gerenteNaoAvaliou ? (
                                   <div className="row-sub" style={{ marginTop: 3, color: 'var(--danger)' }}>
                                     Gerente não avaliou — decida você mesmo abaixo
+                                  </div>
+                                ) : decididoSemGerente ? (
+                                  <div className="row-sub" style={{ marginTop: 3 }}>
+                                    Decidido por você (RH) — gerente não respondeu pela plataforma
                                   </div>
                                 ) : (
                                   <div className="row-sub" style={{ marginTop: 3 }}>Aguardando feedback do gerente</div>

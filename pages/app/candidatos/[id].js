@@ -31,8 +31,16 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unida
   const podeAvaliar = Boolean(candidato.entrevista) && !jaAvaliado;
   const rodada2 = candidato.entrevistaRodada2;
   // 2ª entrevista já aconteceu mas o gerente nunca respondeu pela plataforma — libera o
-  // Aprovar/Reprovar direto pro RH decidir, sem depender do feedback dele.
-  const gerenteNaoAvaliou = rodada2?.status === 'realizada' && !rodada2?.feedback_em;
+  // Aprovar/Reprovar direto pro RH decidir, sem depender do feedback dele. Exige status ainda
+  // em "segunda_entrevista_agendada": o /resolver não mexe em entrevistas.feedback_em, então
+  // sem esse check os botões continuavam aparecendo pra sempre mesmo depois de você já ter
+  // aprovado/reprovado o candidato por aqui.
+  const gerenteNaoAvaliou =
+    rodada2?.status === 'realizada' && !rodada2?.feedback_em && candidato.status === 'segunda_entrevista_agendada';
+  const decididoSemGerente =
+    rodada2?.status === 'realizada' &&
+    !rodada2?.feedback_em &&
+    (candidato.status === 'aprovado' || candidato.status === 'declinado' || candidato.status === 'contratado');
 
   return (
     <Layout active="candidatos" crumb="Recrutamento" title={candidato.nome}>
@@ -202,6 +210,10 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unida
                     ) : gerenteNaoAvaliou ? (
                       <p className="row-sub" style={{ margin: 0, color: 'var(--danger)' }}>
                         Gerente não avaliou — decida você mesmo abaixo.
+                      </p>
+                    ) : decididoSemGerente ? (
+                      <p className="row-sub" style={{ margin: 0 }}>
+                        Decidido por você (RH) — gerente não respondeu pela plataforma.
                       </p>
                     ) : (
                       <p className="row-sub" style={{ margin: 0 }}>
