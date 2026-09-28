@@ -5,9 +5,9 @@ export default function Document() {
     <Html lang="pt-BR">
       <Head>
         <meta charSet="utf-8" />
-        {/* sem isso o navegador do celular renderizava a página em largura de desktop e dava zoom out —
-            é o que fazia o painel ficar minúsculo e difícil de usar no telefone */}
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* a tag de viewport fica no _app.js (via next/head), não aqui — várias páginas têm seu
+            próprio <Head> de página, e uma declarada só aqui no _document duplicava com a que o
+            Next injeta por padrão quando nenhuma página declara uma "a nível de página" */}
         <meta name="theme-color" content="#2c2f5e" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
