@@ -414,10 +414,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const [evoluindoId, setEvoluindoId] = useState(null);
   const [declinandoId, setDeclinandoId] = useState(null);
   const [timelineId, setTimelineId] = useState(null);
-  // "Sem tratar" é a visão padrão — só o que realmente precisa de uma primeira ação sua. Tudo que
-  // já foi tocado de alguma forma (em tratamento, sem contato, declinado, convertido) fica reunido
-  // na aba "Outros status", pra não poluir a lista principal.
-  const [abaLeads, setAbaLeads] = useState('sem_tratar');
+  // "Sem tratar" é a visão padrão — só o que realmente precisa de uma primeira ação sua. Cada
+  // status tem sua própria aba, pra nada ficar escondido dentro de um "outros" genérico.
+  const [abaLeads, setAbaLeads] = useState('novo');
 
   const vagaNome = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
   const eventosDoLead = (id) => eventos.filter((e) => e.lead_id === id);
@@ -439,15 +438,21 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   }
 
   const total = leads.length;
-  const porStatus = { novo: 0, sem_contato: 0, declinado: 0, convertido: 0 };
+  const porStatus = { novo: 0, em_tratamento: 0, sem_contato: 0, declinado: 0, convertido: 0 };
   leads.forEach((l) => {
     porStatus[l.status] = (porStatus[l.status] || 0) + 1;
   });
   const taxaConversao = total ? Math.round((porStatus.convertido / total) * 100) : 0;
 
-  const leadsSemTratar = leads.filter((l) => l.status === 'novo');
-  const leadsOutrosStatus = leads.filter((l) => l.status !== 'novo');
-  const leadsExibidos = abaLeads === 'sem_tratar' ? leadsSemTratar : leadsOutrosStatus;
+  // Uma aba por status — a ordem aqui é a ordem em que as abas aparecem na tela.
+  const ABAS_LEADS = [
+    { status: 'novo', label: 'Sem tratar' },
+    { status: 'em_tratamento', label: 'Em tratamento' },
+    { status: 'sem_contato', label: 'Sem contato' },
+    { status: 'declinado', label: 'Declinado' },
+    { status: 'convertido', label: 'Convertido' },
+  ];
+  const leadsExibidos = leads.filter((l) => l.status === abaLeads);
 
   const hojeStr = new Date().toISOString().slice(0, 10);
   const contatosHoje = eventos.filter((e) => e.tipo === 'status' && e.criado_em?.slice(0, 10) === hojeStr).length;
@@ -635,21 +640,17 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
         <h2>Leads</h2>
         <p>Trate cada lead até declinar ou evoluir para candidatura</p>
       </div>
-      <div className="tabs" style={{ marginBottom: 12 }}>
-        <button
-          type="button"
-          className={`btn btn-sm ${abaLeads === 'sem_tratar' ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => setAbaLeads('sem_tratar')}
-        >
-          Sem tratar ({leadsSemTratar.length})
-        </button>
-        <button
-          type="button"
-          className={`btn btn-sm ${abaLeads === 'outros' ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => setAbaLeads('outros')}
-        >
-          Outros status ({leadsOutrosStatus.length})
-        </button>
+      <div className="tabs" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
+        {ABAS_LEADS.map((aba) => (
+          <button
+            key={aba.status}
+            type="button"
+            className={`btn btn-sm ${abaLeads === aba.status ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setAbaLeads(aba.status)}
+          >
+            {aba.label} ({porStatus[aba.status] || 0})
+          </button>
+        ))}
       </div>
       <div className="card">
         <div className="table-wrap">
@@ -657,7 +658,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             <div className="empty">Nenhum lead cadastrado ainda.</div>
           ) : leadsExibidos.length === 0 ? (
             <div className="empty">
-              {abaLeads === 'sem_tratar' ? 'Nenhum lead sem tratar — tudo em dia 🎉' : 'Nenhum lead nos outros status ainda.'}
+              {abaLeads === 'novo'
+                ? 'Nenhum lead sem tratar — tudo em dia 🎉'
+                : `Nenhum lead com status "${ABAS_LEADS.find((a) => a.status === abaLeads)?.label}" ainda.`}
             </div>
           ) : (
             <table className="table-compact">
