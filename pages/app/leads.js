@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
 import { getLeads, getVagas, getLeadEventosRecentes, getCandidatosComEntrevista } from '../../lib/data';
-import { STATUS_LEAD, ORIGEM_LABEL, ORIGEM_ORDEM, initials, fmtData } from '../../lib/domain';
+import { STATUS_LEAD, ORIGEM_LABEL, ORIGEM_ORDEM, MOTIVOS_DECLINIO_LEAD, initials, fmtData } from '../../lib/domain';
 import { Icon } from '../../components/icons';
 
 const LABEL_TIPO_EVENTO = {
@@ -336,6 +336,47 @@ function EvoluirForm({ lead, vagas, onCancel }) {
   );
 }
 
+// Formulário inline pra declinar um lead com motivo — evita "declinar sem querer" e deixa
+// registrado no histórico (lead_eventos.observacao) por que ele saiu do funil.
+function DeclinarForm({ lead, onCancel }) {
+  const [motivo, setMotivo] = useState(MOTIVOS_DECLINIO_LEAD[0]);
+  const outro = motivo === 'Outro';
+  return (
+    <tr>
+      <td colSpan={9} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+        <form method="POST" action={`/api/leads/${lead.id}/status`} style={{ padding: '14px 16px' }}>
+          <input type="hidden" name="status" value="declinado" />
+          <div className="field">
+            <label>Motivo do declínio</label>
+            <select name={outro ? undefined : 'observacao'} value={motivo} onChange={(e) => setMotivo(e.target.value)} required>
+              {MOTIVOS_DECLINIO_LEAD.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+          {outro ? (
+            <div className="field">
+              <label>Qual?</label>
+              <input type="text" name="observacao" placeholder="Descreva o motivo" required autoFocus />
+            </div>
+          ) : null}
+          <div className="hint">Fica registrado no histórico desse lead.</div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Confirmar declínio
+            </button>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
 function TimelineLead({ eventos }) {
   return (
     <tr>
@@ -369,6 +410,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const [showLimpar, setShowLimpar] = useState(false);
   const [showLimparIncompletos, setShowLimparIncompletos] = useState(false);
   const [evoluindoId, setEvoluindoId] = useState(null);
+  const [declinandoId, setDeclinandoId] = useState(null);
   const [timelineId, setTimelineId] = useState(null);
 
   const vagaNome = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
@@ -593,6 +635,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                   if (evoluindoId === l.id) {
                     return <EvoluirForm key={l.id} lead={l} vagas={vagas} onCancel={() => setEvoluindoId(null)} />;
                   }
+                  if (declinandoId === l.id) {
+                    return <DeclinarForm key={l.id} lead={l} onCancel={() => setDeclinandoId(null)} />;
+                  }
                   const linhas = [
                     <tr key={l.id}>
                       <td>
@@ -677,12 +722,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                                 </form>
                               ) : null}
                               {l.status !== 'declinado' ? (
-                                <form method="POST" action={`/api/leads/${l.id}/status`}>
-                                  <input type="hidden" name="status" value="declinado" />
-                                  <button className="btn btn-ghost btn-sm" type="submit">
-                                    Declinar
-                                  </button>
-                                </form>
+                                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setDeclinandoId(l.id)}>
+                                  Declinar
+                                </button>
                               ) : null}
                               <button className="btn btn-outline btn-sm" type="button" onClick={() => setEvoluindoId(l.id)}>
                                 Evoluir para entrevista
