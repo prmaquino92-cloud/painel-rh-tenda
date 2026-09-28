@@ -14,6 +14,13 @@ function linkWhatsapp(telefone) {
   return `https://wa.me/${comCodigoPais}`;
 }
 
+// Uma entrevista só entra na tabela principal ("ainda vão acontecer") se estiver com status
+// diferente de realizada/cancelada/não compareceu — as outras três vão pras caixinhas
+// separadas abaixo, pra não poluir a lista do que ainda precisa de ação.
+function ehFutura(e) {
+  return !['realizada', 'cancelada', 'nao_compareceu'].includes(e.status);
+}
+
 function isProximos7(iso) {
   const d = new Date(`${iso}T00:00:00`);
   const hoje = new Date();
@@ -58,15 +65,243 @@ function ReagendarForm({ entrevista, onCancel }) {
   );
 }
 
+// Tabela de entrevistas reaproveitada pelas três caixinhas (futuras, realizadas,
+// não compareceu/canceladas) — mesma renderização de linha em todo lugar, só muda a lista.
+function TabelaEntrevistas({ entrevistas, reagendandoId, setReagendandoId, pessoaById, unidadeById, mensagemVazia }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Data e horário</th>
+            <th>Candidato</th>
+            <th>Telefone</th>
+            <th>Vaga</th>
+            <th>Etapa</th>
+            <th>Modalidade</th>
+            <th>Acesso / local</th>
+            <th>Situação</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entrevistas.map((e) => {
+            if (reagendandoId === e.id) {
+              return <ReagendarForm key={e.id} entrevista={e} onCancel={() => setReagendandoId(null)} />;
+            }
+            const presencial = e.tipo === 'presencial';
+            const gerente = presencial ? pessoaById(e.gerente_id) : null;
+            const unidade = presencial ? unidadeById(e.unidade_id) : null;
+            return (
+              <tr key={e.id}>
+                <td className="row-title">
+                  {fmtData(e.data)} · {e.hora?.slice(0, 5)}
+                </td>
+                <td>{e.candidatos?.nome || '—'}</td>
+                <td className="row-sub">
+                  {e.candidatos?.telefone ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>{e.candidatos.telefone}</span>
+                      <a
+                        href={linkWhatsapp(e.candidatos.telefone)}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Chamar no WhatsApp"
+                        style={{ display: 'inline-flex' }}
+                      >
+                        {Icon.whatsapp({ className: 'ic' })}
+                      </a>
+                    </div>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td className="row-sub">{e.vagas?.titulo || '—'}</td>
+                <td className="row-sub">{(e.rodada || 1) === 2 ? '2ª entrevista' : '1ª entrevista'}</td>
+                <td>
+                  {presencial ? (
+                    <span className="pill pill-warning">
+                      <span className="pill-dot" />
+                      Presencial
+                    </span>
+                  ) : (
+                    <span className="pill pill-info">
+                      <span className="pill-dot" />
+                      Videoconferência
+                    </span>
+                  )}
+                </td>
+                <td>
+                  {presencial ? (
+                    <div style={{ fontSize: 12.3, color: 'var(--ink-faint)' }}>
+                      <div>
+                        {gerente?.nome || 'Gerente não definido'} · {unidade?.nome || 'Unidade não definida'}
+                      </div>
+                      {e.feedback_em ? (
+                        <span className={`pill ${FEEDBACK_DECISAO[e.feedback_decisao]?.cls || 'pill-muted'}`} style={{ marginTop: 4 }}>
+                          <span className="pill-dot" />
+                          {FEEDBACK_DECISAO[e.feedback_decisao]?.label || 'Feedback recebido'}
+                        </span>
+                      ) : (
+                        <span style={{ marginTop: 4, display: 'inline-block' }}>Aguardando feedback do gerente</span>
+                      )}
+                    </div>
+                  ) : (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.3, color: 'var(--ink-faint)' }}>
+                      {e.meet_link ? (
+                        <a href={e.meet_link} target="_blank" rel="noreferrer">
+                          {Icon.meet({ className: 'ic' })} entrar
+                        </a>
+                      ) : (
+                        <>{Icon.meet({ className: 'ic' })} pendente de conexão</>
+                      )}
+                    </span>
+                  )}
+                </td>
+                <td style={{ maxWidth: 190 }}>
+                  {e.status === 'realizada' ? (
+                    <span className="pill pill-success">
+                      <span className="pill-dot" />
+                      Realizada
+                    </span>
+                  ) : e.status === 'cancelada' ? (
+                    <span className="pill pill-danger">
+                      <span className="pill-dot" />
+                      Cancelada
+                    </span>
+                  ) : e.status === 'nao_compareceu' ? (
+                    <div>
+                      <span className="pill pill-warning" style={{ marginBottom: 6 }}>
+                        <span className="pill-dot" />
+                        Não compareceu
+                      </span>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <button className="btn btn-outline btn-sm" type="button" onClick={() => setReagendandoId(e.id)}>
+                          Reagendar
+                        </button>
+                        <form
+                          method="POST"
+                          action={`/api/entrevistas/${e.id}/cancelar`}
+                          onSubmit={(ev) => {
+                            if (!window.confirm('Descartar esse candidato? A entrevista fica marcada como cancelada.')) {
+                              ev.preventDefault();
+                            }
+                          }}
+                        >
+                          <button className="btn btn-ghost btn-sm" type="submit" style={{ color: 'var(--danger)' }}>
+                            Descartar
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <form method="POST" action={`/api/entrevistas/${e.id}/realizada`}>
+                        <button className="btn btn-ghost btn-sm" type="submit">
+                          Marcar como realizada
+                        </button>
+                      </form>
+                      <button className="btn btn-outline btn-sm" type="button" onClick={() => setReagendandoId(e.id)}>
+                        Reagendar
+                      </button>
+                      <form
+                        method="POST"
+                        action={`/api/entrevistas/${e.id}/nao-compareceu`}
+                        onSubmit={(ev) => {
+                          if (
+                            !window.confirm(
+                              'Marcar como "não compareceu"? O candidato recebe um e-mail avisando que perdeu o horário, com um link para ele mesmo remarcar.'
+                            )
+                          ) {
+                            ev.preventDefault();
+                          }
+                        }}
+                      >
+                        <button className="btn btn-ghost btn-sm" type="submit">
+                          Não compareceu
+                        </button>
+                      </form>
+                      <form
+                        method="POST"
+                        action={`/api/entrevistas/${e.id}/cancelar`}
+                        onSubmit={(ev) => {
+                          if (!window.confirm('Cancelar essa entrevista? Se houver evento na sua Google Agenda, ele também será removido.')) {
+                            ev.preventDefault();
+                          }
+                        }}
+                      >
+                        <button className="btn btn-ghost btn-sm" type="submit" style={{ color: 'var(--danger)' }}>
+                          Cancelar
+                        </button>
+                      </form>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+          {entrevistas.length === 0 ? (
+            <tr>
+              <td colSpan={8}>
+                <div className="empty">{mensagemVazia}</div>
+              </td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// Caixinha recolhível pra "Realizadas" e "Não compareceu / Canceladas" — some por padrão
+// pra não poluir a agenda com o que já foi resolvido, mas fica um clique de distância.
+function CaixinhaRecolhivel({ titulo, entrevistas, aberto, onToggle, reagendandoId, setReagendandoId, pessoaById, unidadeById }) {
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="card-pad"
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
+        <span style={{ fontFamily: 'Sora,sans-serif', fontWeight: 600, fontSize: 13.5, letterSpacing: '0.02em', textTransform: 'uppercase' }}>
+          {titulo} <span style={{ color: 'var(--ink-faint)', fontWeight: 400, textTransform: 'none' }}>({entrevistas.length})</span>
+        </span>
+        <span style={{ fontSize: 12.3, color: 'var(--ink-soft)' }}>{aberto ? 'Ocultar ▲' : 'Mostrar ▼'}</span>
+      </button>
+      {aberto ? (
+        <TabelaEntrevistas
+          entrevistas={entrevistas}
+          reagendandoId={reagendandoId}
+          setReagendandoId={setReagendandoId}
+          pessoaById={pessoaById}
+          unidadeById={unidadeById}
+          mensagemVazia="Nenhuma entrevista nessa categoria."
+        />
+      ) : null}
+    </div>
+  );
+}
+
 export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoas, unidades, erro }) {
   const [showForm, setShowForm] = useState(false);
   const [tipo, setTipo] = useState('pontual');
-  const [mostrarRealizadas, setMostrarRealizadas] = useState(false);
+  const [showRealizadas, setShowRealizadas] = useState(false);
+  const [showNaoCompareceu, setShowNaoCompareceu] = useState(false);
   const [reagendandoId, setReagendandoId] = useState(null);
   const pessoaById = (id) => pessoas.find((p) => p.id === id);
   const unidadeById = (id) => unidades.find((u) => u.id === id);
-  const pendentes = entrevistas.filter((e) => !['realizada', 'cancelada'].includes(e.status));
-  const visiveis = mostrarRealizadas ? entrevistas : pendentes;
+  const futuras = entrevistas.filter(ehFutura);
+  const realizadas = entrevistas.filter((e) => e.status === 'realizada');
+  const naoCompareceuCanceladas = entrevistas.filter((e) => e.status === 'cancelada' || e.status === 'nao_compareceu');
 
   return (
     <Layout active="agenda" crumb="Recrutamento" title="Agenda de entrevistas">
@@ -91,12 +326,12 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
       <div className="grid grid-4">
         <div className="stat">
           <div className="label">Entrevistas pendentes</div>
-          <div className="value num">{pendentes.length}</div>
-          <div className="sub">Ainda não marcadas como realizadas</div>
+          <div className="value num">{futuras.length}</div>
+          <div className="sub">Ainda vão acontecer</div>
         </div>
         <div className="stat">
           <div className="label">Próximos 7 dias</div>
-          <div className="value num">{pendentes.filter((e) => isProximos7(e.data)).length}</div>
+          <div className="value num">{futuras.filter((e) => isProximos7(e.data)).length}</div>
           <div className="sub">A partir de hoje</div>
         </div>
         <div className="stat">
@@ -121,198 +356,40 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
 
       <div className="section-head">
         <h2>Entrevistas vinculadas</h2>
-        <p>Data, candidato, vaga e local/acesso de cada etapa</p>
+        <p>Data, candidato, vaga e local/acesso de cada etapa — só o que ainda vai acontecer</p>
       </div>
       <div className="card">
-        <div className="card-pad" style={{ paddingBottom: 0, display: 'flex', justifyContent: 'flex-end' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.3, color: 'var(--ink-soft)', fontWeight: 400 }}>
-            <input type="checkbox" checked={mostrarRealizadas} onChange={(e) => setMostrarRealizadas(e.target.checked)} />
-            Mostrar entrevistas realizadas e canceladas
-          </label>
-        </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Data e horário</th>
-                <th>Candidato</th>
-                <th>Telefone</th>
-                <th>Vaga</th>
-                <th>Etapa</th>
-                <th>Modalidade</th>
-                <th>Acesso / local</th>
-                <th>Situação</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visiveis.map((e) => {
-                if (reagendandoId === e.id) {
-                  return <ReagendarForm key={e.id} entrevista={e} onCancel={() => setReagendandoId(null)} />;
-                }
-                const presencial = e.tipo === 'presencial';
-                const gerente = presencial ? pessoaById(e.gerente_id) : null;
-                const unidade = presencial ? unidadeById(e.unidade_id) : null;
-                return (
-                  <tr key={e.id}>
-                    <td className="row-title">
-                      {fmtData(e.data)} · {e.hora?.slice(0, 5)}
-                    </td>
-                    <td>{e.candidatos?.nome || '—'}</td>
-                    <td className="row-sub">
-                      {e.candidatos?.telefone ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span>{e.candidatos.telefone}</span>
-                          <a
-                            href={linkWhatsapp(e.candidatos.telefone)}
-                            target="_blank"
-                            rel="noreferrer"
-                            title="Chamar no WhatsApp"
-                            style={{ display: 'inline-flex' }}
-                          >
-                            {Icon.whatsapp({ className: 'ic' })}
-                          </a>
-                        </div>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="row-sub">{e.vagas?.titulo || '—'}</td>
-                    <td className="row-sub">{(e.rodada || 1) === 2 ? '2ª entrevista' : '1ª entrevista'}</td>
-                    <td>
-                      {presencial ? (
-                        <span className="pill pill-warning">
-                          <span className="pill-dot" />
-                          Presencial
-                        </span>
-                      ) : (
-                        <span className="pill pill-info">
-                          <span className="pill-dot" />
-                          Videoconferência
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      {presencial ? (
-                        <div style={{ fontSize: 12.3, color: 'var(--ink-faint)' }}>
-                          <div>
-                            {gerente?.nome || 'Gerente não definido'} · {unidade?.nome || 'Unidade não definida'}
-                          </div>
-                          {e.feedback_em ? (
-                            <span className={`pill ${FEEDBACK_DECISAO[e.feedback_decisao]?.cls || 'pill-muted'}`} style={{ marginTop: 4 }}>
-                              <span className="pill-dot" />
-                              {FEEDBACK_DECISAO[e.feedback_decisao]?.label || 'Feedback recebido'}
-                            </span>
-                          ) : (
-                            <span style={{ marginTop: 4, display: 'inline-block' }}>Aguardando feedback do gerente</span>
-                          )}
-                        </div>
-                      ) : (
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.3, color: 'var(--ink-faint)' }}>
-                          {e.meet_link ? (
-                            <a href={e.meet_link} target="_blank" rel="noreferrer">
-                              {Icon.meet({ className: 'ic' })} entrar
-                            </a>
-                          ) : (
-                            <>{Icon.meet({ className: 'ic' })} pendente de conexão</>
-                          )}
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ maxWidth: 190 }}>
-                      {e.status === 'realizada' ? (
-                        <span className="pill pill-success">
-                          <span className="pill-dot" />
-                          Realizada
-                        </span>
-                      ) : e.status === 'cancelada' ? (
-                        <span className="pill pill-danger">
-                          <span className="pill-dot" />
-                          Cancelada
-                        </span>
-                      ) : e.status === 'nao_compareceu' ? (
-                        <div>
-                          <span className="pill pill-warning" style={{ marginBottom: 6 }}>
-                            <span className="pill-dot" />
-                            Não compareceu
-                          </span>
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            <button className="btn btn-outline btn-sm" type="button" onClick={() => setReagendandoId(e.id)}>
-                              Reagendar
-                            </button>
-                            <form
-                              method="POST"
-                              action={`/api/entrevistas/${e.id}/cancelar`}
-                              onSubmit={(ev) => {
-                                if (!window.confirm('Descartar esse candidato? A entrevista fica marcada como cancelada.')) {
-                                  ev.preventDefault();
-                                }
-                              }}
-                            >
-                              <button className="btn btn-ghost btn-sm" type="submit" style={{ color: 'var(--danger)' }}>
-                                Descartar
-                              </button>
-                            </form>
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          <form method="POST" action={`/api/entrevistas/${e.id}/realizada`}>
-                            <button className="btn btn-ghost btn-sm" type="submit">
-                              Marcar como realizada
-                            </button>
-                          </form>
-                          <button className="btn btn-outline btn-sm" type="button" onClick={() => setReagendandoId(e.id)}>
-                            Reagendar
-                          </button>
-                          <form
-                            method="POST"
-                            action={`/api/entrevistas/${e.id}/nao-compareceu`}
-                            onSubmit={(ev) => {
-                              if (
-                                !window.confirm(
-                                  'Marcar como "não compareceu"? O candidato recebe um e-mail avisando que perdeu o horário, com um link para ele mesmo remarcar.'
-                                )
-                              ) {
-                                ev.preventDefault();
-                              }
-                            }}
-                          >
-                            <button className="btn btn-ghost btn-sm" type="submit">
-                              Não compareceu
-                            </button>
-                          </form>
-                          <form
-                            method="POST"
-                            action={`/api/entrevistas/${e.id}/cancelar`}
-                            onSubmit={(ev) => {
-                              if (!window.confirm('Cancelar essa entrevista? Se houver evento na sua Google Agenda, ele também será removido.')) {
-                                ev.preventDefault();
-                              }
-                            }}
-                          >
-                            <button className="btn btn-ghost btn-sm" type="submit" style={{ color: 'var(--danger)' }}>
-                              Cancelar
-                            </button>
-                          </form>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {visiveis.length === 0 ? (
-                <tr>
-                  <td colSpan={8}>
-                    <div className="empty">
-                      {mostrarRealizadas ? 'Nenhuma entrevista agendada ainda.' : 'Nenhuma entrevista pendente — tudo em dia.'}
-                    </div>
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+        <TabelaEntrevistas
+          entrevistas={futuras}
+          reagendandoId={reagendandoId}
+          setReagendandoId={setReagendandoId}
+          pessoaById={pessoaById}
+          unidadeById={unidadeById}
+          mensagemVazia="Nenhuma entrevista pendente — tudo em dia."
+        />
       </div>
+
+      <CaixinhaRecolhivel
+        titulo="Realizadas"
+        entrevistas={realizadas}
+        aberto={showRealizadas}
+        onToggle={() => setShowRealizadas((v) => !v)}
+        reagendandoId={reagendandoId}
+        setReagendandoId={setReagendandoId}
+        pessoaById={pessoaById}
+        unidadeById={unidadeById}
+      />
+
+      <CaixinhaRecolhivel
+        titulo="Não compareceu / Canceladas"
+        entrevistas={naoCompareceuCanceladas}
+        aberto={showNaoCompareceu}
+        onToggle={() => setShowNaoCompareceu((v) => !v)}
+        reagendandoId={reagendandoId}
+        setReagendandoId={setReagendandoId}
+        pessoaById={pessoaById}
+        unidadeById={unidadeById}
+      />
 
       <div className="section-head">
         <h2>Bloqueios manuais</h2>
