@@ -12,13 +12,18 @@ const LABEL_TIPO_EVENTO = {
 };
 
 // Monta o link "clique para conversar" a partir do telefone cadastrado — assume DDD + número
-// brasileiro e completa com o código do país (55) quando ainda não vem incluso.
-function linkWhatsapp(telefone) {
+// brasileiro e completa com o código do país (55) quando ainda não vem incluso. Já vem com a
+// mensagem de abordagem pronta (nome do lead incluso), pra abrir o WhatsApp direto na
+// conversa com o texto só esperando o "Enviar".
+function linkWhatsapp(telefone, nome) {
   if (!telefone) return null;
   const digitos = telefone.replace(/\D/g, '');
   if (!digitos) return null;
   const comCodigoPais = digitos.startsWith('55') ? digitos : `55${digitos}`;
-  return `https://wa.me/${comCodigoPais}`;
+  const primeiroNome = (nome || '').trim().split(/\s+/)[0] || '';
+  const saudacao = primeiroNome ? `Olá ${primeiroNome}` : 'Olá';
+  const mensagem = `${saudacao}, tudo bem? Aqui é da Tenda Vendas! Vi seu cadastro e gostaria de conversar sobre a oportunidade de se tornar um corretor parceiro. Podemos falar agora?`;
+  return `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
 }
 
 function ImportarLeads() {
@@ -603,7 +608,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span>{l.telefone}</span>
                             <a
-                              href={linkWhatsapp(l.telefone)}
+                              href={linkWhatsapp(l.telefone, l.nome)}
                               target="_blank"
                               rel="noreferrer"
                               title="Chamar no WhatsApp"

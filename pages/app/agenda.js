@@ -6,12 +6,17 @@ import { getGoogleStatus } from '../../lib/google';
 import { DIA_SEMANA_LABEL, FEEDBACK_DECISAO, fmtData } from '../../lib/domain';
 import { Icon } from '../../components/icons';
 
-function linkWhatsapp(telefone) {
+// Já vem com a mensagem de confirmação pronta (nome do candidato incluso), pra abrir o
+// WhatsApp direto na conversa com o texto só esperando o "Enviar".
+function linkWhatsapp(telefone, nome) {
   if (!telefone) return null;
   const digitos = telefone.replace(/\D/g, '');
   if (!digitos) return null;
   const comCodigoPais = digitos.startsWith('55') ? digitos : `55${digitos}`;
-  return `https://wa.me/${comCodigoPais}`;
+  const primeiroNome = (nome || '').trim().split(/\s+/)[0] || '';
+  const saudacao = primeiroNome ? `Olá ${primeiroNome}` : 'Olá';
+  const mensagem = `${saudacao}, tudo bem? Aqui é da Tenda Vendas, passando pra confirmar sua entrevista. Qualquer dúvida me chama por aqui!`;
+  return `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
 }
 
 // Uma entrevista só entra na tabela principal ("ainda vão acontecer") se estiver com status
@@ -102,7 +107,7 @@ function TabelaEntrevistas({ entrevistas, reagendandoId, setReagendandoId, pesso
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span>{e.candidatos.telefone}</span>
                       <a
-                        href={linkWhatsapp(e.candidatos.telefone)}
+                        href={linkWhatsapp(e.candidatos.telefone, e.candidatos.nome)}
                         target="_blank"
                         rel="noreferrer"
                         title="Chamar no WhatsApp"
