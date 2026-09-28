@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
 import { getLeads, getVagas, getLeadEventosRecentes, getCandidatosComEntrevista } from '../../lib/data';
@@ -405,6 +406,7 @@ function TimelineLead({ eventos }) {
 }
 
 export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro }) {
+  const router = useRouter();
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showLimpar, setShowLimpar] = useState(false);
@@ -416,6 +418,21 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const vagaNome = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
   const eventosDoLead = (id) => eventos.filter((e) => e.lead_id === id);
   const jaCandidatou = (id) => candidatos.some((c) => c.lead_id === id);
+
+  // Clicar no ícone do WhatsApp já conta como "tratei esse lead" — marca em_tratamento
+  // automaticamente, sem exigir um clique extra em "Sem contato"/etc. Só mexe quando o lead
+  // ainda está em aberto (novo/sem_contato/já em tratamento); não sobrescreve uma decisão já
+  // tomada (declinado) nem um lead que já virou candidato (a própria API também bloqueia isso).
+  function marcarEmTratamentoAoChamar(lead) {
+    if (lead.status === 'declinado' || lead.status === 'convertido' || lead.status === 'em_tratamento') return;
+    fetch(`/api/leads/${lead.id}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ status: 'em_tratamento' }),
+    })
+      .then(() => router.replace(router.asPath, undefined, { scroll: false }))
+      .catch(() => {});
+  }
 
   const total = leads.length;
   const porStatus = { novo: 0, sem_contato: 0, declinado: 0, convertido: 0 };
@@ -658,6 +675,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                               rel="noreferrer"
                               title="Chamar no WhatsApp"
                               style={{ display: 'inline-flex' }}
+                              onClick={() => marcarEmTratamentoAoChamar(l)}
                             >
                               {Icon.whatsapp({ className: 'ic' })}
                             </a>

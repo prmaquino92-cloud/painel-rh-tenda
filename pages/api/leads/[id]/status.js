@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
 import { isAuthenticated } from '../../../../lib/auth';
 
-const PERMITIDOS = ['novo', 'sem_contato', 'declinado'];
+const PERMITIDOS = ['novo', 'em_tratamento', 'sem_contato', 'declinado'];
 
 export default async function handler(req, res) {
   if (!isAuthenticated(req)) {
