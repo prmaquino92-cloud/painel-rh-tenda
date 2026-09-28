@@ -414,6 +414,10 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const [evoluindoId, setEvoluindoId] = useState(null);
   const [declinandoId, setDeclinandoId] = useState(null);
   const [timelineId, setTimelineId] = useState(null);
+  // "Sem tratar" é a visão padrão — só o que realmente precisa de uma primeira ação sua. Tudo que
+  // já foi tocado de alguma forma (em tratamento, sem contato, declinado, convertido) fica reunido
+  // na aba "Outros status", pra não poluir a lista principal.
+  const [abaLeads, setAbaLeads] = useState('sem_tratar');
 
   const vagaNome = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
   const eventosDoLead = (id) => eventos.filter((e) => e.lead_id === id);
@@ -440,6 +444,10 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
     porStatus[l.status] = (porStatus[l.status] || 0) + 1;
   });
   const taxaConversao = total ? Math.round((porStatus.convertido / total) * 100) : 0;
+
+  const leadsSemTratar = leads.filter((l) => l.status === 'novo');
+  const leadsOutrosStatus = leads.filter((l) => l.status !== 'novo');
+  const leadsExibidos = abaLeads === 'sem_tratar' ? leadsSemTratar : leadsOutrosStatus;
 
   const hojeStr = new Date().toISOString().slice(0, 10);
   const contatosHoje = eventos.filter((e) => e.tipo === 'status' && e.criado_em?.slice(0, 10) === hojeStr).length;
@@ -624,13 +632,33 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
       </div>
 
       <div className="section-head">
-        <h2>Todos os leads</h2>
+        <h2>Leads</h2>
         <p>Trate cada lead até declinar ou evoluir para candidatura</p>
+      </div>
+      <div className="tabs" style={{ marginBottom: 12 }}>
+        <button
+          type="button"
+          className={`btn btn-sm ${abaLeads === 'sem_tratar' ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => setAbaLeads('sem_tratar')}
+        >
+          Sem tratar ({leadsSemTratar.length})
+        </button>
+        <button
+          type="button"
+          className={`btn btn-sm ${abaLeads === 'outros' ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => setAbaLeads('outros')}
+        >
+          Outros status ({leadsOutrosStatus.length})
+        </button>
       </div>
       <div className="card">
         <div className="table-wrap">
           {leads.length === 0 ? (
             <div className="empty">Nenhum lead cadastrado ainda.</div>
+          ) : leadsExibidos.length === 0 ? (
+            <div className="empty">
+              {abaLeads === 'sem_tratar' ? 'Nenhum lead sem tratar — tudo em dia 🎉' : 'Nenhum lead nos outros status ainda.'}
+            </div>
           ) : (
             <table className="table-compact">
               <thead>
@@ -647,7 +675,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                 </tr>
               </thead>
               <tbody>
-                {leads.map((l) => {
+                {leadsExibidos.map((l) => {
                   const st = STATUS_LEAD[l.status];
                   if (evoluindoId === l.id) {
                     return <EvoluirForm key={l.id} lead={l} vagas={vagas} onCancel={() => setEvoluindoId(null)} />;
