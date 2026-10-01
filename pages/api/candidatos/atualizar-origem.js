@@ -72,15 +72,23 @@ export default async function handler(req, res) {
   }
 
   let workbook;
+  let debugXlsxFix = null;
   try {
-    let buf = Buffer.from(fileBase64, 'base64');
+    const bufOriginal = Buffer.from(fileBase64, 'base64');
     // ver nota em lib/xlsxFix.js — corrige um formato de XML interno que alguns arquivos têm e
     // que a biblioteca de leitura não reconhece (monta a planilha com zero linhas sem avisar).
     // Não faz nada em arquivos normais (Excel/LibreOffice).
-    buf = normalizarXlsxNamespacePrefixado(buf);
+    let buf = bufOriginal;
+    try {
+      buf = normalizarXlsxNamespacePrefixado(bufOriginal);
+      debugXlsxFix = { ok: true, mudou: buf !== bufOriginal, tamanhoAntes: bufOriginal.length, tamanhoDepois: buf.length };
+    } catch (eFix) {
+      debugXlsxFix = { ok: false, erro: eFix.message };
+      buf = bufOriginal;
+    }
     workbook = XLSX.read(buf, { type: 'buffer' });
   } catch {
-    res.status(400).json({ error: 'Não foi possível ler a planilha. Confira se é um arquivo .xlsx válido, baixado a partir do modelo.' });
+    res.status(400).json({ error: 'Não foi possível ler a planilha. Confira se é um arquivo .xlsx válido, baixado a partir do modelo.', debugXlsxFix });
     return;
   }
 
@@ -199,6 +207,7 @@ export default async function handler(req, res) {
       linhasSemCorrespondencia,
       linhasSemNome,
       porStatusCandidato,
+      debugXlsxFix,
       amostra: mudancas.slice(0, 30).map((m) => ({
         candidatoId: m.candidato.id,
         nome: m.candidato.nome,
