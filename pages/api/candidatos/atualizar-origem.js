@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 import { supabaseAdmin } from '../../../lib/supabase';
 import { isAuthenticated } from '../../../lib/auth';
 import { ORIGEM_LABEL, ORIGEM_ORDEM, STATUS_CANDIDATO } from '../../../lib/domain';
+import { normalizarXlsxNamespacePrefixado } from '../../../lib/xlsxFix';
 
 // Usa a planilha de leads (mesmo modelo da importação) pra corrigir origem e localidade de
 // candidatos que JÁ EXISTEM — casando por telefone/e-mail. Isso resolve relatórios como
@@ -72,7 +73,11 @@ export default async function handler(req, res) {
 
   let workbook;
   try {
-    const buf = Buffer.from(fileBase64, 'base64');
+    let buf = Buffer.from(fileBase64, 'base64');
+    // ver nota em lib/xlsxFix.js — corrige um formato de XML interno que alguns arquivos têm e
+    // que a biblioteca de leitura não reconhece (monta a planilha com zero linhas sem avisar).
+    // Não faz nada em arquivos normais (Excel/LibreOffice).
+    buf = normalizarXlsxNamespacePrefixado(buf);
     workbook = XLSX.read(buf, { type: 'buffer' });
   } catch {
     res.status(400).json({ error: 'Não foi possível ler a planilha. Confira se é um arquivo .xlsx válido, baixado a partir do modelo.' });

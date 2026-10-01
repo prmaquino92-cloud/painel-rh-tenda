@@ -3,6 +3,7 @@ import { supabaseAdmin } from '../../../lib/supabase';
 import { isAuthenticated } from '../../../lib/auth';
 import { getVagas, getLeads } from '../../../lib/data';
 import { ORIGEM_LABEL, ORIGEM_ORDEM, STATUS_LEAD, STATUS_CANDIDATO } from '../../../lib/domain';
+import { normalizarXlsxNamespacePrefixado } from '../../../lib/xlsxFix';
 
 // aceita tanto o valor interno ("pandape") quanto o rótulo em português ("Pandapé") na planilha
 function resolverOrigem(valor) {
@@ -80,7 +81,12 @@ export default async function handler(req, res) {
 
   let workbook;
   try {
-    const buf = Buffer.from(fileBase64, 'base64');
+    let buf = Buffer.from(fileBase64, 'base64');
+    // alguns arquivos (não exportados pelo Excel/LibreOffice) vêm com o XML interno num formato
+    // que a biblioteca de leitura não reconhece direito e monta a planilha com zero linhas sem
+    // avisar — essa função detecta esse caso específico e corrige antes de ler (não faz nada em
+    // arquivos normais).
+    buf = normalizarXlsxNamespacePrefixado(buf);
     workbook = XLSX.read(buf, { type: 'buffer' });
   } catch {
     res.status(400).json({ error: 'Não foi possível ler a planilha. Confira se é um arquivo .xlsx válido, baixado a partir do modelo.' });
