@@ -89,7 +89,8 @@ function ImportarLeads() {
           Baixe o modelo primeiro (botão acima), preencha uma linha por lead e envie aqui. Se a coluna "Vaga de interesse" não bater
           exatamente com o nome de uma vaga ativa, o lead entra do mesmo jeito, só que sem vaga vinculada. O painel confere
           automaticamente se cada linha já está cadastrada (como lead ou já evoluída pra candidato) pelo telefone ou e-mail, pra não
-          duplicar ninguém nem bagunçar seus relatórios de produção.
+          duplicar ninguém nem bagunçar seus relatórios de produção — e, pros que já existem, avisa se falta alguma informação da
+          planilha no cadastro atual (sem alterar nada sozinho).
         </div>
         {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
         {resultado ? (
@@ -103,6 +104,12 @@ function ImportarLeads() {
               <li>{resultado.jaEramLeads || 0} já estavam cadastrados como lead (ainda não evoluídos) — não duplicados.</li>
               <li>{resultado.jaEramCandidatos || 0} já tinham evoluído pra candidato — não duplicados.</li>
               <li>{resultado.duplicadosNaPlanilha || 0} repetido(s) dentro da própria planilha — só o primeiro foi importado.</li>
+              {resultado.registrosComLacuna ? (
+                <li>
+                  <strong>{resultado.registrosComLacuna}</strong> dos já cadastrados estão com alguma informação da planilha faltando
+                  no cadastro atual — veja qual em "Ver detalhes por linha" abaixo.
+                </li>
+              ) : null}
             </ul>
             {resultado.avisos?.length ? (
               <details style={{ marginTop: 8 }}>

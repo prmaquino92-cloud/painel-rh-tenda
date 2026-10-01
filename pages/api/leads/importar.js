@@ -32,6 +32,30 @@ function normEmail(s) {
   return (s || '').toString().trim().toLowerCase();
 }
 
+// Compara o que veio na planilha com o que já está salvo no registro existente (lead ou
+// candidato) e devolve a lista de informações que a planilha tem mas o cadastro ainda não tem —
+// só reporta, nunca altera nada (Pedro só quer saber se falta algo, pra decidir se completa ele
+// mesmo depois).
+function camposFaltantesNoRegistro({ telefone, email, localidade, vagaTitulo, origemBruta }, registro, tipo) {
+  const faltando = [];
+  if (telefone && !registro.telefone) faltando.push('telefone');
+  if (email && !registro.email) faltando.push('e-mail');
+  if (tipo === 'candidato') {
+    if (localidade && !registro.cidade && !registro.estado) faltando.push('localidade (cidade/estado)');
+  } else {
+    if (localidade && !registro.localidade) faltando.push('localidade');
+  }
+  if (vagaTitulo && !registro.vaga_id) faltando.push('vaga de interesse');
+  if (origemBruta && !registro.origem) faltando.push('origem');
+  return faltando;
+}
+
+function fraseFaltando(faltando) {
+  return faltando.length
+    ? `Faltam no cadastro atual: ${faltando.join(', ')}.`
+    : 'O cadastro atual já tem todas as informações desta linha da planilha.';
+}
+
 export const config = {
   api: {
     bodyParser: { sizeLimit: '10mb' },
@@ -72,7 +96,8 @@ export default async function handler(req, res) {
 
   const sb = supabaseAdmin();
 
-  // Carrega todos os leads e candidatos já existentes para detectar duplicados antes de inserir.
+  // Carrega todos os leads e candidatos já existentes para detectar duplicados antes de inserir
+  // e para comparar, campo a campo, com o que vem na planilha.
   // leads vem de getLeads() (já paginado por causa do limite de 1000 linhas do Supabase).
   const leadsExistentes = await getLeads();
 
@@ -86,7 +111,7 @@ export default async function handler(req, res) {
       const fim = inicio + PAGE_SIZE - 1;
       const { data, error } = await sb
         .from('candidatos')
-        .select('id,nome,telefone,email,status')
+        .select('id,nome,telefone,email,cidade,estado,vaga_id,origem,status')
         .order('criado_em', { ascending: false })
         .order('id', { ascending: true })
         .range(inicio, fim);
@@ -100,9 +125,10 @@ export default async function handler(req, res) {
     }
   }
 
-  // Mapas por telefone/e-mail normalizados — candidatos primeiro (já evoluíram), leads depois
-  // (ainda não evoluíram). Linhas novas da própria planilha vão sendo adicionadas ao mapa de
-  // leads conforme são aceitas, pra pegar duplicados dentro do próprio arquivo também.
+  // Mapas por telefone/e-mail normalizados, guardando o registro completo (pra depois comparar
+  // campo a campo) — candidatos primeiro (já evoluíram), leads depois (ainda não evoluíram).
+  // Linhas novas da própria planilha vão sendo adicionadas ao mapa de leads conforme são
+  // aceitas, pra pegar duplicados dentro do próprio arquivo também.
   const candPorTelefone = new Map();
   const candPorEmail = new Map();
   candidatosExistentes.forEach((c) => {
@@ -117,8 +143,9 @@ export default async function handler(req, res) {
   leadsExistentes.forEach((l) => {
     const t = normTelefone(l.telefone);
     const e = normEmail(l.email);
-    if (t && !leadPorTelefone.has(t)) leadPorTelefone.set(t, { nome: l.nome, status: l.status, origemLinha: null });
-    if (e && !leadPorEmail.has(e)) leadPorEmail.set(e, { nome: l.nome, status: l.status, origemLinha: null });
+    const entrada = { registro: l, origemLinha: null };
+    if (t && !leadPorTelefone.has(t)) leadPorTelefone.set(t, entrada);
+    if (e && !leadPorEmail.has(e)) leadPorEmail.set(e, entrada);
   });
 
   const avisos = [];
@@ -126,6 +153,7 @@ export default async function handler(req, res) {
   let jaEramCandidatos = 0;
   let jaEramLeads = 0;
   let duplicadosNaPlanilha = 0;
+  let registrosComLacuna = 0;
 
   linhas.forEach((linha, idx) => {
     const numLinha = idx + 2;
@@ -138,6 +166,8 @@ export default async function handler(req, res) {
     const email = String(linha['E-mail'] ?? linha['Email'] ?? linha['email'] ?? '').trim() || null;
     const localidade = String(linha['Localidade'] ?? linha['localidade'] ?? '').trim() || null;
     const vagaTitulo = String(linha['Vaga de interesse'] ?? linha['Vaga'] ?? linha['vaga'] ?? '').trim();
+    const origemBruta = String(linha['Origem'] ?? linha['origem'] ?? '').trim();
+    const dadosLinha = { telefone, email, localidade, vagaTitulo, origemBruta };
 
     const telNorm = normTelefone(telefone);
     const emailNorm = normEmail(email);
@@ -147,7 +177,11 @@ export default async function handler(req, res) {
     if (candMatch) {
       jaEramCandidatos += 1;
       const statusLabel = STATUS_CANDIDATO[candMatch.status]?.label || candMatch.status;
-      avisos.push(`Linha ${numLinha}: "${nome}" já é candidato (${candMatch.nome}, status: ${statusLabel}) — não importado de novo.`);
+      const faltando = camposFaltantesNoRegistro(dadosLinha, candMatch, 'candidato');
+      if (faltando.length) registrosComLacuna += 1;
+      avisos.push(
+        `Linha ${numLinha}: "${nome}" já é candidato (${candMatch.nome}, status: ${statusLabel}) — não importado de novo. ${fraseFaltando(faltando)}`
+      );
       return;
     }
 
@@ -155,13 +189,19 @@ export default async function handler(req, res) {
     // linha anterior desta mesma planilha, pra pegar duplicados dentro do próprio arquivo.
     const leadMatch = (telNorm && leadPorTelefone.get(telNorm)) || (emailNorm && leadPorEmail.get(emailNorm));
     if (leadMatch) {
+      const faltando = camposFaltantesNoRegistro(dadosLinha, leadMatch.registro, 'lead');
       if (leadMatch.origemLinha) {
         duplicadosNaPlanilha += 1;
-        avisos.push(`Linha ${numLinha}: "${nome}" é duplicado da linha ${leadMatch.origemLinha} desta mesma planilha — não importado de novo.`);
+        avisos.push(
+          `Linha ${numLinha}: "${nome}" é duplicado da linha ${leadMatch.origemLinha} desta mesma planilha — não importado de novo. ${fraseFaltando(faltando)}`
+        );
       } else {
         jaEramLeads += 1;
-        const statusLabel = STATUS_LEAD[leadMatch.status]?.label || leadMatch.status;
-        avisos.push(`Linha ${numLinha}: "${nome}" já está cadastrado como lead (${leadMatch.nome}, status: ${statusLabel}) — não importado de novo.`);
+        if (faltando.length) registrosComLacuna += 1;
+        const statusLabel = STATUS_LEAD[leadMatch.registro.status]?.label || leadMatch.registro.status;
+        avisos.push(
+          `Linha ${numLinha}: "${nome}" já está cadastrado como lead (${leadMatch.registro.nome}, status: ${statusLabel}) — não importado de novo. ${fraseFaltando(faltando)}`
+        );
       }
       return;
     }
@@ -171,17 +211,18 @@ export default async function handler(req, res) {
       vaga_id = vagaPorTitulo.get(vagaTitulo.toLowerCase()) || null;
       if (!vaga_id) avisos.push(`Linha ${numLinha}: vaga "${vagaTitulo}" não encontrada — lead importado sem vaga vinculada.`);
     }
-    const origemBruta = String(linha['Origem'] ?? linha['origem'] ?? '').trim();
     const origem = resolverOrigem(origemBruta);
     if (origemBruta && origem === 'outro' && !['outro', 'outros'].includes(origemBruta.toLowerCase())) {
       avisos.push(`Linha ${numLinha}: origem "${origemBruta}" não reconhecida — importado como "Outro".`);
     }
 
-    paraInserir.push({ nome, telefone, email, localidade, vaga_id, origem, status: 'novo' });
+    const novoLead = { nome, telefone, email, localidade, vaga_id, origem, status: 'novo' };
+    paraInserir.push(novoLead);
 
     // Registra essa linha aceita nos mapas de lead, pra detectar duplicatas das próximas linhas.
-    if (telNorm) leadPorTelefone.set(telNorm, { nome, status: 'novo', origemLinha: numLinha });
-    if (emailNorm) leadPorEmail.set(emailNorm, { nome, status: 'novo', origemLinha: numLinha });
+    const entrada = { registro: novoLead, origemLinha: numLinha };
+    if (telNorm) leadPorTelefone.set(telNorm, entrada);
+    if (emailNorm) leadPorEmail.set(emailNorm, entrada);
   });
 
   const totalIgnorados = jaEramCandidatos + jaEramLeads + duplicadosNaPlanilha;
@@ -193,6 +234,7 @@ export default async function handler(req, res) {
       jaEramCandidatos,
       jaEramLeads,
       duplicadosNaPlanilha,
+      registrosComLacuna,
       avisos:
         totalIgnorados > 0
           ? avisos
@@ -221,6 +263,7 @@ export default async function handler(req, res) {
     jaEramCandidatos,
     jaEramLeads,
     duplicadosNaPlanilha,
+    registrosComLacuna,
     avisos,
   });
 }
