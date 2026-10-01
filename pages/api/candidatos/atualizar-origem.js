@@ -81,7 +81,14 @@ export default async function handler(req, res) {
     let buf = bufOriginal;
     try {
       buf = normalizarXlsxNamespacePrefixado(bufOriginal);
-      debugXlsxFix = { ok: true, mudou: buf !== bufOriginal, tamanhoAntes: bufOriginal.length, tamanhoDepois: buf.length };
+      debugXlsxFix = {
+        ok: true,
+        mudou: buf !== bufOriginal,
+        tamanhoAntes: bufOriginal.length,
+        tamanhoDepois: buf.length,
+        // temporário, só pra diagnosticar — remover depois de confirmar o que está acontecendo
+        bufferBase64: buf !== bufOriginal ? buf.toString('base64') : null,
+      };
     } catch (eFix) {
       debugXlsxFix = { ok: false, erro: eFix.message };
       buf = bufOriginal;
