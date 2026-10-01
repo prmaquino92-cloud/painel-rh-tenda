@@ -129,6 +129,159 @@ function ImportarLeads() {
   );
 }
 
+function AtualizarCandidatosOrigem() {
+  const [arquivo, setArquivo] = useState(null);
+  const [checando, setChecando] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  function lerArquivoBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function verificar() {
+    if (!arquivo) {
+      setErro('Selecione um arquivo .xlsx primeiro.');
+      return;
+    }
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const fileBase64 = await lerArquivoBase64(arquivo);
+      const r = await fetch('/api/candidatos/atualizar-origem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileBase64, aplicar: false }),
+      });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível verificar a planilha.');
+      } else {
+        setRelatorio(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function aplicar() {
+    if (!arquivo || !relatorio) return;
+    const ok = window.confirm(
+      `Isso vai atualizar origem e/ou localidade de ${relatorio.candidatosParaAtualizar} candidato(s) com os dados da planilha, substituindo o que estiver preenchido hoje para esses campos. Essa ação não pode ser desfeita automaticamente. Confirma?`
+    );
+    if (!ok) return;
+    setAplicando(true);
+    setErro('');
+    try {
+      const fileBase64 = await lerArquivoBase64(arquivo);
+      const r = await fetch('/api/candidatos/atualizar-origem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileBase64, aplicar: true }),
+      });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível atualizar os candidatos.');
+      } else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Usa a mesma planilha de leads (casando por telefone/e-mail) pra corrigir a origem e a localidade dos candidatos que já
+          existem — inclusive agendados, entrevistados, contratados ou declinados. Resolve relatórios como "Conversão por origem"
+          quando o candidato foi criado sem herdar a origem real do lead. Nunca mexe em nome, telefone, e-mail, vaga ou status — só
+          origem e localidade, e só nos campos em que a planilha tiver informação.
+        </div>
+        <div className="field-row" style={{ alignItems: 'flex-end' }}>
+          <div className="field" style={{ flex: 1 }}>
+            <label>Planilha (.xlsx, mesmo modelo de leads)</label>
+            <input
+              type="file"
+              accept=".xlsx"
+              onChange={(e) => {
+                setArquivo(e.target.files?.[0] || null);
+                setRelatorio(null);
+                setResultado(null);
+              }}
+            />
+          </div>
+          <button className="btn btn-outline btn-sm" type="button" onClick={verificar} disabled={checando || aplicando}>
+            {checando ? 'Verificando...' : 'Verificar'}
+          </button>
+          {relatorio && relatorio.candidatosParaAtualizar > 0 ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={aplicar} disabled={aplicando}>
+              {aplicando ? 'Atualizando...' : `Atualizar ${relatorio.candidatosParaAtualizar} candidato(s)`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              {relatorio.candidatosParaAtualizar} candidato(s) de {relatorio.totalLinhas} linha(s) da planilha teriam origem e/ou
+              localidade atualizadas. {relatorio.linhasJaAtualizadas} linha(s) já batiam com o que o candidato já tinha.{' '}
+              {relatorio.linhasSemCorrespondencia} linha(s) não corresponderam a nenhum candidato existente (ainda são só lead, ou a
+              pessoa não está cadastrada).
+            </div>
+            {relatorio.candidatosParaAtualizar > 0 ? (
+              <>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                  {Object.entries(relatorio.porStatusCandidato).map(([status, qtd]) => (
+                    <li key={status}>
+                      {qtd} no status "{STATUS_CANDIDATO[status]?.label || status}".
+                    </li>
+                  ))}
+                </ul>
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ cursor: 'pointer' }}>
+                    Ver amostra ({relatorio.amostra.length} de {relatorio.candidatosParaAtualizar})
+                  </summary>
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                    {relatorio.amostra.map((a) => (
+                      <li key={a.candidatoId}>
+                        "{a.nome}" (status: {a.status})
+                        {a.origemDepois ? ` — origem: ${a.origemAntes} → ${a.origemDepois}` : ''}
+                        {a.localidadeDepois ? ` — localidade: ${a.localidadeAntes} → ${a.localidadeDepois}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.candidatosAtualizados} candidato(s) atualizado(s) com sucesso. Confira a página de relatórios pra ver os
+            números corrigidos.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function LimparDuplicados() {
   const [checando, setChecando] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
@@ -601,6 +754,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const [showLimpar, setShowLimpar] = useState(false);
   const [showLimparIncompletos, setShowLimparIncompletos] = useState(false);
   const [showRevisar, setShowRevisar] = useState(false);
+  const [showAtualizarCandidatos, setShowAtualizarCandidatos] = useState(false);
   const [evoluindoId, setEvoluindoId] = useState(null);
   const [declinandoId, setDeclinandoId] = useState(null);
   const [editandoId, setEditandoId] = useState(null);
@@ -703,6 +857,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
           <button className="btn btn-outline" onClick={() => setShowRevisar((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Verificar já evoluídos
           </button>
+          <button className="btn btn-outline" onClick={() => setShowAtualizarCandidatos((v) => !v)}>
+            {Icon.plus({ className: 'ic' })} Atualizar candidatos (origem/localidade)
+          </button>
           <button className="btn btn-primary" onClick={() => setShowForm((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Cadastrar lead
           </button>
@@ -713,6 +870,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
       {showLimpar ? <LimparDuplicados /> : null}
       {showLimparIncompletos ? <LimparIncompletos /> : null}
       {showRevisar ? <RevisarEvoluidos /> : null}
+      {showAtualizarCandidatos ? <AtualizarCandidatosOrigem /> : null}
 
       {showForm ? (
         <div className="card form-card" style={{ marginTop: 16 }}>
