@@ -185,9 +185,13 @@ function TabelaEntrevistas({ entrevistas, reagendandoId, setReagendandoId, pesso
                         </button>
                         <form
                           method="POST"
-                          action={`/api/entrevistas/${e.id}/cancelar`}
+                          action={`/api/entrevistas/${e.id}/descartar`}
                           onSubmit={(ev) => {
-                            if (!window.confirm('Descartar esse candidato? A entrevista fica marcada como cancelada.')) {
+                            if (
+                              !window.confirm(
+                                'Descartar esse candidato? A entrevista fica cancelada e o candidato é marcado como reprovado/declinado.'
+                              )
+                            ) {
                               ev.preventDefault();
                             }
                           }}
