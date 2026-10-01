@@ -28,7 +28,13 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unida
 
   const st = STATUS_CANDIDATO[candidato.status];
   const jaAvaliado = Boolean(candidato.parecer);
-  const podeAvaliar = Boolean(candidato.entrevista) && !jaAvaliado;
+  // Entrevista cancelada ou marcada como "não compareceu" não é uma entrevista que aconteceu —
+  // não faz sentido oferecer "Registrar avaliação" como se tivesse. Esses casos saem da tela
+  // como se estivessem aguardando avaliação, até você reagendar ou descartar o candidato lá na
+  // Agenda.
+  const entrevistaCancelada = candidato.entrevista?.status === 'cancelada';
+  const entrevistaFaltou = candidato.entrevista?.status === 'nao_compareceu';
+  const podeAvaliar = Boolean(candidato.entrevista) && !jaAvaliado && !entrevistaCancelada && !entrevistaFaltou;
   const rodada2 = candidato.entrevistaRodada2;
   // 2ª entrevista já aconteceu mas o gerente nunca respondeu pela plataforma — libera o
   // Aprovar/Reprovar direto pro RH decidir, sem depender do feedback dele. Exige status ainda
@@ -162,6 +168,19 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unida
             <button className="btn btn-outline btn-sm" type="button" style={{ marginTop: 12 }} onClick={() => setAvaliando(true)}>
               Registrar avaliação
             </button>
+          ) : !jaAvaliado && (entrevistaCancelada || entrevistaFaltou) ? (
+            <div style={{ marginTop: 12 }}>
+              <p className="row-sub" style={{ margin: 0, color: 'var(--danger)' }}>
+                {entrevistaCancelada ? 'Entrevista cancelada' : 'Não compareceu'} — aguardando avaliação.
+              </p>
+              <p className="row-sub" style={{ marginTop: 2 }}>
+                Reagende ou descarte o candidato na{' '}
+                <Link href="/app/agenda" style={{ textDecoration: 'underline' }}>
+                  Agenda
+                </Link>
+                .
+              </p>
+            </div>
           ) : null}
           {avaliando ? (
             <div style={{ marginTop: 12, background: 'var(--surface-2, #f7f7fa)', borderRadius: 10 }}>

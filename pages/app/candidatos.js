@@ -270,7 +270,13 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                   const pessoaCorretor = c.pessoa_id ? pessoaById(c.pessoa_id) : null;
                   const vagaDaCandidatura = vagaById(c.vaga_id);
                   const jaAvaliado = Boolean(c.parecer);
-                  const podeAvaliar = Boolean(c.entrevista) && !jaAvaliado;
+                  // Entrevista cancelada ou marcada como "não compareceu" não é uma entrevista que
+                  // aconteceu — não faz sentido oferecer "Registrar avaliação" como se tivesse. Esses
+                  // casos saem da tela como se estivessem aguardando avaliação, até você reagendar ou
+                  // descartar o candidato lá na Agenda.
+                  const entrevistaCancelada = c.entrevista?.status === 'cancelada';
+                  const entrevistaFaltou = c.entrevista?.status === 'nao_compareceu';
+                  const podeAvaliar = Boolean(c.entrevista) && !jaAvaliado && !entrevistaCancelada && !entrevistaFaltou;
                   // 2ª entrevista já aconteceu mas o gerente nunca respondeu pela plataforma —
                   // não pode travar o resultado do RH esperando indefinidamente, então libera
                   // o Aprovar/Reprovar direto pra você mesmo decidir. Exige status ainda em
@@ -419,6 +425,19 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                           <button className="btn btn-outline btn-sm" type="button" onClick={() => setAvaliarId(c.id)}>
                             Registrar avaliação
                           </button>
+                        ) : entrevistaCancelada || entrevistaFaltou ? (
+                          <div>
+                            <span className="row-sub" style={{ color: 'var(--danger)' }}>
+                              {entrevistaCancelada ? 'Entrevista cancelada' : 'Não compareceu'} — aguardando avaliação
+                            </span>
+                            <div className="row-sub" style={{ marginTop: 2 }}>
+                              Reagende ou descarte na{' '}
+                              <Link href="/app/agenda" style={{ textDecoration: 'underline' }}>
+                                Agenda
+                              </Link>
+                              .
+                            </div>
+                          </div>
                         ) : (
                           <span className="row-sub">Aguardando a 1ª entrevista</span>
                         )}
