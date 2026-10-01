@@ -2,7 +2,7 @@ import * as XLSX from 'xlsx';
 import { supabaseAdmin } from '../../../lib/supabase';
 import { isAuthenticated } from '../../../lib/auth';
 import { ORIGEM_LABEL, ORIGEM_ORDEM, STATUS_CANDIDATO } from '../../../lib/domain';
-import { normalizarXlsxNamespacePrefixado } from '../../../lib/xlsxFix';
+import { normalizarXlsxNamespacePrefixado, debugInspecionar } from '../../../lib/xlsxFix';
 
 // Usa a planilha de leads (mesmo modelo da importação) pra corrigir origem e localidade de
 // candidatos que JÁ EXISTEM — casando por telefone/e-mail. Isso resolve relatórios como
@@ -87,7 +87,7 @@ export default async function handler(req, res) {
         tamanhoAntes: bufOriginal.length,
         tamanhoDepois: buf.length,
         // temporário, só pra diagnosticar — remover depois de confirmar o que está acontecendo
-        bufferBase64: buf !== bufOriginal ? buf.toString('base64') : null,
+        inspecao: debugInspecionar(bufOriginal),
       };
     } catch (eFix) {
       debugXlsxFix = { ok: false, erro: eFix.message };
