@@ -417,6 +417,8 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   // "Sem tratar" é a visão padrão — só o que realmente precisa de uma primeira ação sua. Cada
   // status tem sua própria aba, pra nada ficar escondido dentro de um "outros" genérico.
   const [abaLeads, setAbaLeads] = useState('novo');
+  const [filtroOrigem, setFiltroOrigem] = useState('todas');
+  const [filtroLocalidade, setFiltroLocalidade] = useState('todas');
 
   const vagaNome = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
   const eventosDoLead = (id) => eventos.filter((e) => e.lead_id === id);
@@ -452,7 +454,21 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
     { status: 'declinado', label: 'Declinado' },
     { status: 'convertido', label: 'Convertido' },
   ];
-  const leadsExibidos = leads.filter((l) => l.status === abaLeads);
+  // Localidade é texto livre (vem do cadastro/importação), não um enum fixo como origem — então
+  // a lista de opções do filtro é montada a partir do que realmente existe nos leads.
+  const localidadesDisponiveis = Array.from(new Set(leads.map((l) => l.localidade).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b, 'pt-BR')
+  );
+  const leadsFiltrados = leads.filter(
+    (l) => (filtroOrigem === 'todas' || l.origem === filtroOrigem) && (filtroLocalidade === 'todas' || l.localidade === filtroLocalidade)
+  );
+  // Contagem de cada aba já considera os filtros de origem/localidade ativos, pra não mostrar um
+  // número que depois não bate com o que aparece na tabela.
+  const porStatusFiltrado = { novo: 0, em_tratamento: 0, sem_contato: 0, declinado: 0, convertido: 0 };
+  leadsFiltrados.forEach((l) => {
+    porStatusFiltrado[l.status] = (porStatusFiltrado[l.status] || 0) + 1;
+  });
+  const leadsExibidos = leadsFiltrados.filter((l) => l.status === abaLeads);
 
   const hojeStr = new Date().toISOString().slice(0, 10);
   const contatosHoje = eventos.filter((e) => e.tipo === 'status' && e.criado_em?.slice(0, 10) === hojeStr).length;
@@ -640,6 +656,36 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
         <h2>Leads</h2>
         <p>Trate cada lead até declinar ou evoluir para candidatura</p>
       </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <select style={{ maxWidth: 220 }} value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)}>
+          <option value="todas">Todas as origens</option>
+          {ORIGEM_ORDEM.map((o) => (
+            <option key={o} value={o}>
+              {ORIGEM_LABEL[o]}
+            </option>
+          ))}
+        </select>
+        <select style={{ maxWidth: 220 }} value={filtroLocalidade} onChange={(e) => setFiltroLocalidade(e.target.value)}>
+          <option value="todas">Todas as localidades</option>
+          {localidadesDisponiveis.map((loc) => (
+            <option key={loc} value={loc}>
+              {loc}
+            </option>
+          ))}
+        </select>
+        {filtroOrigem !== 'todas' || filtroLocalidade !== 'todas' ? (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setFiltroOrigem('todas');
+              setFiltroLocalidade('todas');
+            }}
+          >
+            Limpar filtros
+          </button>
+        ) : null}
+      </div>
       <div className="tabs" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
         {ABAS_LEADS.map((aba) => (
           <button
@@ -648,7 +694,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             className={`btn btn-sm ${abaLeads === aba.status ? 'btn-primary' : 'btn-ghost'}`}
             onClick={() => setAbaLeads(aba.status)}
           >
-            {aba.label} ({porStatus[aba.status] || 0})
+            {aba.label} ({porStatusFiltrado[aba.status] || 0})
           </button>
         ))}
       </div>
@@ -658,7 +704,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             <div className="empty">Nenhum lead cadastrado ainda.</div>
           ) : leadsExibidos.length === 0 ? (
             <div className="empty">
-              {abaLeads === 'novo'
+              {filtroOrigem !== 'todas' || filtroLocalidade !== 'todas'
+                ? 'Nenhum lead encontrado com esses filtros.'
+                : abaLeads === 'novo'
                 ? 'Nenhum lead sem tratar — tudo em dia 🎉'
                 : `Nenhum lead com status "${ABAS_LEADS.find((a) => a.status === abaLeads)?.label}" ainda.`}
             </div>
