@@ -87,21 +87,32 @@ function ImportarLeads() {
         </div>
         <div className="hint">
           Baixe o modelo primeiro (botão acima), preencha uma linha por lead e envie aqui. Se a coluna "Vaga de interesse" não bater
-          exatamente com o nome de uma vaga ativa, o lead entra do mesmo jeito, só que sem vaga vinculada.
+          exatamente com o nome de uma vaga ativa, o lead entra do mesmo jeito, só que sem vaga vinculada. O painel confere
+          automaticamente se cada linha já está cadastrada (como lead ou já evoluída pra candidato) pelo telefone ou e-mail, pra não
+          duplicar ninguém nem bagunçar seus relatórios de produção.
         </div>
         {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
         {resultado ? (
           <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
             <div>
-              {resultado.inseridos} de {resultado.totalLinhas} linha(s) importada(s) com sucesso. Recarregue a página pra ver os novos
-              leads na lista.
+              {resultado.inseridos} de {resultado.totalLinhas} linha(s) importada(s) como lead novo. Recarregue a página pra ver na
+              lista.
             </div>
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+              <li>{resultado.inseridos} novo(s), importado(s) agora.</li>
+              <li>{resultado.jaEramLeads || 0} já estavam cadastrados como lead (ainda não evoluídos) — não duplicados.</li>
+              <li>{resultado.jaEramCandidatos || 0} já tinham evoluído pra candidato — não duplicados.</li>
+              <li>{resultado.duplicadosNaPlanilha || 0} repetido(s) dentro da própria planilha — só o primeiro foi importado.</li>
+            </ul>
             {resultado.avisos?.length ? (
-              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                {resultado.avisos.map((a, i) => (
-                  <li key={i}>{a}</li>
-                ))}
-              </ul>
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer' }}>Ver detalhes por linha ({resultado.avisos.length})</summary>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                  {resultado.avisos.map((a, i) => (
+                    <li key={i}>{a}</li>
+                  ))}
+                </ul>
+              </details>
             ) : null}
           </div>
         ) : null}
