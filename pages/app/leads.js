@@ -3,13 +3,14 @@ import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
 import { getLeads, getVagas, getLeadEventosRecentes, getCandidatosComEntrevista } from '../../lib/data';
-import { STATUS_LEAD, ORIGEM_LABEL, ORIGEM_ORDEM, MOTIVOS_DECLINIO_LEAD, initials, fmtData } from '../../lib/domain';
+import { STATUS_LEAD, STATUS_CANDIDATO, ORIGEM_LABEL, ORIGEM_ORDEM, MOTIVOS_DECLINIO_LEAD, initials, fmtData } from '../../lib/domain';
 import { Icon } from '../../components/icons';
 
 const LABEL_TIPO_EVENTO = {
   criado: 'Lead cadastrado',
   status: 'Status alterado',
   candidatura_recebida: 'Candidatura recebida',
+  editado: 'Dados atualizados',
 };
 
 // Monta o link "clique para conversar" a partir do telefone cadastrado — assume DDD + número
@@ -322,6 +323,176 @@ function LimparIncompletos() {
   );
 }
 
+function RevisarEvoluidos() {
+  const [checando, setChecando] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  async function checar() {
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const r = await fetch('/api/leads/revisar-evoluidos', { method: 'GET' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível verificar os leads.');
+      } else {
+        setRelatorio(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function aplicar() {
+    if (!relatorio) return;
+    const ok = window.confirm(
+      `Isso vai marcar ${relatorio.totalParaAtualizar} lead(s) como "Convertido em candidato", porque já existe um candidato com os mesmos dados (ou vinculado a eles). O status anterior fica registrado no histórico de cada um. Confirma?`
+    );
+    if (!ok) return;
+    setAplicando(true);
+    setErro('');
+    try {
+      const r = await fetch('/api/leads/revisar-evoluidos', { method: 'POST' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível atualizar os leads.');
+      } else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Verifica, entre os leads que ainda não estão marcados como "Convertido", quais já têm um candidato cadastrado com o mesmo
+          telefone ou e-mail (ou já vinculado diretamente a esse lead) — inclusive os que já foram aprovados, contratados ou
+          declinados como candidato. Esses leads são movidos pra aba "Convertido" pra não ficarem parecendo pendentes de tratamento.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-outline btn-sm" type="button" onClick={checar} disabled={checando || aplicando}>
+            {checando ? 'Verificando...' : 'Verificar já evoluídos'}
+          </button>
+          {relatorio && relatorio.totalParaAtualizar > 0 ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={aplicar} disabled={aplicando}>
+              {aplicando ? 'Atualizando...' : `Marcar ${relatorio.totalParaAtualizar} como convertido`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              {relatorio.totalParaAtualizar} de {relatorio.totalLeads} lead(s) já são candidato e ainda não estão marcados como
+              "Convertido".
+            </div>
+            {relatorio.totalParaAtualizar > 0 ? (
+              <>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                  {Object.entries(relatorio.porStatusCandidato).map(([status, qtd]) => (
+                    <li key={status}>
+                      {qtd} como candidato no status "{STATUS_CANDIDATO[status]?.label || status}".
+                    </li>
+                  ))}
+                </ul>
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ cursor: 'pointer' }}>Ver amostra ({relatorio.amostra.length} de {relatorio.totalParaAtualizar})</summary>
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                    {relatorio.amostra.map((a) => (
+                      <li key={a.leadId}>
+                        "{a.nome}" ({a.telefone || 'sem telefone'}) — já é candidato "{a.candidato}" (status: {a.statusCandidato}
+                        ).
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.linhasAtualizadas} lead(s) marcado(s) como "Convertido". Recarregue a página pra ver os números atualizados.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function EditarForm({ lead, vagas, onCancel }) {
+  return (
+    <tr>
+      <td colSpan={9} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+        <form method="POST" action={`/api/leads/${lead.id}/editar`} style={{ padding: '14px 16px' }}>
+          <div className="field">
+            <label>Nome</label>
+            <input type="text" name="nome" defaultValue={lead.nome} required autoFocus />
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label>Telefone</label>
+              <input type="tel" name="telefone" defaultValue={lead.telefone || ''} />
+            </div>
+            <div className="field">
+              <label>E-mail</label>
+              <input type="email" name="email" defaultValue={lead.email || ''} />
+            </div>
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label>Localidade</label>
+              <input type="text" name="localidade" defaultValue={lead.localidade || ''} placeholder="Cidade - UF" />
+            </div>
+            <div className="field">
+              <label>Vaga de interesse</label>
+              <select name="vaga_id" defaultValue={lead.vaga_id || ''}>
+                <option value="">Ainda não sei</option>
+                {vagas.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.titulo}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="field">
+            <label>Origem</label>
+            <select name="origem" defaultValue={lead.origem || 'outro'}>
+              {ORIGEM_ORDEM.filter((o) => o !== 'site').map((o) => (
+                <option key={o} value={o}>
+                  {ORIGEM_LABEL[o]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Salvar alterações
+            </button>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
 function EvoluirForm({ lead, vagas, onCancel }) {
   return (
     <tr>
@@ -429,8 +600,10 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const [showImport, setShowImport] = useState(false);
   const [showLimpar, setShowLimpar] = useState(false);
   const [showLimparIncompletos, setShowLimparIncompletos] = useState(false);
+  const [showRevisar, setShowRevisar] = useState(false);
   const [evoluindoId, setEvoluindoId] = useState(null);
   const [declinandoId, setDeclinandoId] = useState(null);
+  const [editandoId, setEditandoId] = useState(null);
   const [timelineId, setTimelineId] = useState(null);
   // "Sem tratar" é a visão padrão — só o que realmente precisa de uma primeira ação sua. Cada
   // status tem sua própria aba, pra nada ficar escondido dentro de um "outros" genérico.
@@ -527,6 +700,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
           <button className="btn btn-outline" onClick={() => setShowLimparIncompletos((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Manter só completos
           </button>
+          <button className="btn btn-outline" onClick={() => setShowRevisar((v) => !v)}>
+            {Icon.plus({ className: 'ic' })} Verificar já evoluídos
+          </button>
           <button className="btn btn-primary" onClick={() => setShowForm((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Cadastrar lead
           </button>
@@ -536,6 +712,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
       {showImport ? <ImportarLeads /> : null}
       {showLimpar ? <LimparDuplicados /> : null}
       {showLimparIncompletos ? <LimparIncompletos /> : null}
+      {showRevisar ? <RevisarEvoluidos /> : null}
 
       {showForm ? (
         <div className="card form-card" style={{ marginTop: 16 }}>
@@ -752,6 +929,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                   if (declinandoId === l.id) {
                     return <DeclinarForm key={l.id} lead={l} onCancel={() => setDeclinandoId(null)} />;
                   }
+                  if (editandoId === l.id) {
+                    return <EditarForm key={l.id} lead={l} vagas={vagas} onCancel={() => setEditandoId(null)} />;
+                  }
                   const linhas = [
                     <tr key={l.id}>
                       <td>
@@ -846,6 +1026,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                               </button>
                             </div>
                           )}
+                          <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEditandoId(l.id)}>
+                            Editar dados
+                          </button>
                           <button className="btn btn-ghost btn-sm" type="button" onClick={() => setTimelineId(timelineId === l.id ? null : l.id)}>
                             {timelineId === l.id ? 'Ocultar histórico' : 'Ver histórico'}
                           </button>
