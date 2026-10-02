@@ -171,8 +171,13 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
 
   // Banco de candidatos "presos": já fizeram a 2ª entrevista, mas o gerente nunca deu retorno
   // pela plataforma. Sem isso, esses candidatos ficam parados pra sempre — o RH precisa poder
-  // avaliar e fechar a decisão mesmo sem o feedback do gerente.
-  const semRetornoGerente = candidatos.filter((c) => c.entrevistaRodada2?.status === 'realizada' && !c.entrevistaRodada2?.feedback_em);
+  // avaliar e fechar a decisão mesmo sem o feedback do gerente. Exige status ainda em
+  // "segunda_entrevista_agendada" — mesma condição do botão Aprovar/Reprovar de cada linha —
+  // senão um candidato que você já avaliou (aprovado/declinado/contratado) continua contando
+  // aqui pra sempre, mesmo decidido.
+  const semRetornoGerente = candidatos.filter(
+    (c) => c.entrevistaRodada2?.status === 'realizada' && !c.entrevistaRodada2?.feedback_em && c.status === 'segunda_entrevista_agendada'
+  );
   const idsSemRetorno = new Set(semRetornoGerente.map((c) => c.id));
 
   const filtrados = candidatos.filter((c) => {
