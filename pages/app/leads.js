@@ -25,9 +25,36 @@ function mensagemAbordagemPadrao(primeiroNome) {
 const MENSAGEM_ABORDAGEM_POR_ORIGEM = {
   leads_gerente_rafael: (primeiroNome) => {
     const saudacao = primeiroNome ? `Oi, ${primeiroNome}, tudo bem?` : 'Oi, tudo bem?';
-    return `${saudacao} Aqui é o Pedro, do RH da Tenda Vendas.\nTô conversando com alguns corretores aqui da região sobre um modelo em que a comissão cai em torno de 10 dias depois do ato — sem esperar a assinatura na Caixa.\nPosso te mandar como funciona? É rapidinho 🙂`;
+    return `${saudacao} Aqui é o Pedro, do RH da Tenda Vendas.\nTô conversando com alguns corretores aqui da região sobre um modelo em que a comissão cai em torno de 10 dias depois do ato — sem esperar a assinatura na Caixa.\nPosso te mandar como funciona? É rapidinho :)`;
   },
 };
+
+// Origens com um card de divulgação (imagem) próprio, pra anexar junto da mensagem de
+// abordagem. O link do WhatsApp só consegue preencher texto — não anexa imagem sozinho — então
+// o botão de chamar no WhatsApp, pra essas origens, primeiro tenta copiar a imagem pra área de
+// transferência, pra bastar colar (Ctrl+V) na conversa depois que ela abrir.
+const CARD_DIVULGACAO_POR_ORIGEM = {
+  leads_gerente_rafael: '/cards/corretores-comissao-10dias.png',
+};
+
+// Copia a imagem do card pra área de transferência (como imagem de verdade, não como link),
+// pra já cair pronta pra colar com Ctrl+V na conversa do WhatsApp. Precisa rodar síncrono dentro
+// do clique (gesto do usuário) pra o navegador permitir escrever na área de transferência.
+// Alguns navegadores não suportam (ex.: Firefox ainda não tem ClipboardItem de imagem) — nesses
+// casos cai pro link manual de baixar o card, que continua funcionando do mesmo jeito.
+async function copiarCardParaClipboard(urlCard) {
+  if (!navigator.clipboard || typeof window.ClipboardItem === 'undefined') {
+    return false;
+  }
+  try {
+    const resposta = await fetch(urlCard);
+    const blob = await resposta.blob();
+    await navigator.clipboard.write([new window.ClipboardItem({ [blob.type]: blob })]);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // Monta o link "clique para conversar" a partir do telefone cadastrado — assume DDD + número
 // brasileiro e completa com o código do país (55) quando ainda não vem incluso. Já vem com a
@@ -920,6 +947,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const [showRevisar, setShowRevisar] = useState(false);
   const [showAtualizarCandidatos, setShowAtualizarCandidatos] = useState(false);
   const [showAtualizarLeads, setShowAtualizarLeads] = useState(false);
+  // Feedback, por lead, de se o card de divulgação foi copiado com sucesso pra área de
+  // transferência ao clicar no WhatsApp ('ok' | 'falhou') — undefined antes do primeiro clique.
+  const [cardCopiadoStatus, setCardCopiadoStatus] = useState({});
   const [evoluindoId, setEvoluindoId] = useState(null);
   const [declinandoId, setDeclinandoId] = useState(null);
   const [editandoId, setEditandoId] = useState(null);
@@ -947,6 +977,18 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
     })
       .then(() => router.replace(router.asPath, undefined, { scroll: false }))
       .catch(() => {});
+  }
+
+  // Ao clicar em "Chamar no WhatsApp" num lead com card de divulgação, tenta copiar a imagem
+  // pra área de transferência antes de abrir a conversa — o próprio clique é o gesto do usuário
+  // que o navegador exige pra permitir isso, por isso dispara antes do link abrir a nova aba.
+  function handleCliqueWhatsapp(lead) {
+    marcarEmTratamentoAoChamar(lead);
+    const urlCard = CARD_DIVULGACAO_POR_ORIGEM[lead.origem];
+    if (!urlCard) return;
+    copiarCardParaClipboard(urlCard).then((ok) => {
+      setCardCopiadoStatus((prev) => ({ ...prev, [lead.id]: ok ? 'ok' : 'falhou' }));
+    });
   }
 
   const total = leads.length;
@@ -1271,29 +1313,43 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                       </td>
                       <td className="row-sub">
                         {l.telefone ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                             <span>{l.telefone}</span>
                             <a
                               href={linkWhatsapp(l.telefone, l.nome, l.origem)}
                               target="_blank"
                               rel="noreferrer"
-                              title="Chamar no WhatsApp"
+                              title={
+                                CARD_DIVULGACAO_POR_ORIGEM[l.origem]
+                                  ? 'Chamar no WhatsApp — o card de divulgação já é copiado automaticamente, é só colar (Ctrl+V) na conversa'
+                                  : 'Chamar no WhatsApp'
+                              }
                               style={{ display: 'inline-flex' }}
-                              onClick={() => marcarEmTratamentoAoChamar(l)}
+                              onClick={() => handleCliqueWhatsapp(l)}
                             >
                               {Icon.whatsapp({ className: 'ic' })}
                             </a>
-                            {l.origem === 'leads_gerente_rafael' ? (
-                              <a
-                                href="/cards/corretores-comissao-10dias.png"
-                                download
-                                target="_blank"
-                                rel="noreferrer"
-                                title="Baixar o card de divulgação pra anexar na conversa — o link do WhatsApp só preenche o texto, não anexa imagem sozinho"
-                                style={{ fontSize: 11, textDecoration: 'underline', whiteSpace: 'nowrap' }}
-                              >
-                                card
-                              </a>
+                            {CARD_DIVULGACAO_POR_ORIGEM[l.origem] ? (
+                              cardCopiadoStatus[l.id] === 'ok' ? (
+                                <span style={{ fontSize: 11, color: 'var(--success, #1a7f37)', whiteSpace: 'nowrap' }}>
+                                  card copiado — cole com Ctrl+V
+                                </span>
+                              ) : (
+                                <a
+                                  href={CARD_DIVULGACAO_POR_ORIGEM[l.origem]}
+                                  download
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title={
+                                    cardCopiadoStatus[l.id] === 'falhou'
+                                      ? 'Não deu pra copiar automaticamente nesse navegador — baixe o card aqui pra anexar manualmente'
+                                      : 'Baixar o card de divulgação pra anexar na conversa, caso a cópia automática não funcione'
+                                  }
+                                  style={{ fontSize: 11, textDecoration: 'underline', whiteSpace: 'nowrap' }}
+                                >
+                                  {cardCopiadoStatus[l.id] === 'falhou' ? 'baixar card' : 'card'}
+                                </a>
+                              )
                             ) : null}
                           </div>
                         ) : (
