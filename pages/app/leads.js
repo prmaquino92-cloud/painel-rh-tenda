@@ -282,6 +282,154 @@ function AtualizarCandidatosOrigem() {
   );
 }
 
+function AtualizarLeadsOrigem() {
+  const [arquivo, setArquivo] = useState(null);
+  const [checando, setChecando] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  function lerArquivoBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function verificar() {
+    if (!arquivo) {
+      setErro('Selecione um arquivo .xlsx primeiro.');
+      return;
+    }
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const fileBase64 = await lerArquivoBase64(arquivo);
+      const r = await fetch('/api/leads/atualizar-origem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileBase64, aplicar: false }),
+      });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível verificar a planilha.');
+      } else {
+        setRelatorio(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function aplicar() {
+    if (!arquivo || !relatorio) return;
+    const ok = window.confirm(
+      `Isso vai atualizar a origem de ${relatorio.leadsParaAtualizar} lead(s) com os dados da planilha, substituindo o que estiver preenchido hoje nesse campo. Essa ação não pode ser desfeita automaticamente. Confirma?`
+    );
+    if (!ok) return;
+    setAplicando(true);
+    setErro('');
+    try {
+      const fileBase64 = await lerArquivoBase64(arquivo);
+      const r = await fetch('/api/leads/atualizar-origem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileBase64, aplicar: true }),
+      });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível atualizar os leads.');
+      } else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Usa a mesma planilha de leads (casando por telefone/e-mail) pra corrigir a origem de leads que já existem — útil quando um
+          lote foi importado antes de um valor de origem virar uma opção reconhecida pelo sistema e ficou marcado como "Outro". Nunca
+          mexe em nome, telefone, e-mail, vaga ou status — só origem.
+        </div>
+        <div className="field-row" style={{ alignItems: 'flex-end' }}>
+          <div className="field" style={{ flex: 1 }}>
+            <label>Planilha (.xlsx, mesmo modelo de leads)</label>
+            <input
+              type="file"
+              accept=".xlsx"
+              onChange={(e) => {
+                setArquivo(e.target.files?.[0] || null);
+                setRelatorio(null);
+                setResultado(null);
+              }}
+            />
+          </div>
+          <button className="btn btn-outline btn-sm" type="button" onClick={verificar} disabled={checando || aplicando}>
+            {checando ? 'Verificando...' : 'Verificar'}
+          </button>
+          {relatorio && relatorio.leadsParaAtualizar > 0 ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={aplicar} disabled={aplicando}>
+              {aplicando ? 'Atualizando...' : `Atualizar ${relatorio.leadsParaAtualizar} lead(s)`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              {relatorio.leadsParaAtualizar} lead(s) de {relatorio.totalLinhas} linha(s) da planilha teriam a origem atualizada.{' '}
+              {relatorio.linhasJaAtualizadas} linha(s) já batiam com o que o lead já tinha. {relatorio.linhasSemCorrespondencia} linha(s)
+              não corresponderam a nenhum lead existente (já evoluiu pra candidato, ou a pessoa não está cadastrada).
+            </div>
+            {relatorio.leadsParaAtualizar > 0 ? (
+              <>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                  {Object.entries(relatorio.porStatusLead).map(([status, qtd]) => (
+                    <li key={status}>
+                      {qtd} no status "{STATUS_LEAD[status]?.label || status}".
+                    </li>
+                  ))}
+                </ul>
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ cursor: 'pointer' }}>
+                    Ver amostra ({relatorio.amostra.length} de {relatorio.leadsParaAtualizar})
+                  </summary>
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                    {relatorio.amostra.map((a) => (
+                      <li key={a.leadId}>
+                        "{a.nome}" (status: {a.status}) — origem: {a.origemAntes} → {a.origemDepois}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.leadsAtualizados} lead(s) atualizado(s) com sucesso.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function LimparDuplicados() {
   const [checando, setChecando] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
@@ -755,6 +903,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const [showLimparIncompletos, setShowLimparIncompletos] = useState(false);
   const [showRevisar, setShowRevisar] = useState(false);
   const [showAtualizarCandidatos, setShowAtualizarCandidatos] = useState(false);
+  const [showAtualizarLeads, setShowAtualizarLeads] = useState(false);
   const [evoluindoId, setEvoluindoId] = useState(null);
   const [declinandoId, setDeclinandoId] = useState(null);
   const [editandoId, setEditandoId] = useState(null);
@@ -860,6 +1009,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
           <button className="btn btn-outline" onClick={() => setShowAtualizarCandidatos((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Atualizar candidatos (origem/localidade)
           </button>
+          <button className="btn btn-outline" onClick={() => setShowAtualizarLeads((v) => !v)}>
+            {Icon.plus({ className: 'ic' })} Atualizar leads (origem)
+          </button>
           <button className="btn btn-primary" onClick={() => setShowForm((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Cadastrar lead
           </button>
@@ -871,6 +1023,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
       {showLimparIncompletos ? <LimparIncompletos /> : null}
       {showRevisar ? <RevisarEvoluidos /> : null}
       {showAtualizarCandidatos ? <AtualizarCandidatosOrigem /> : null}
+      {showAtualizarLeads ? <AtualizarLeadsOrigem /> : null}
 
       {showForm ? (
         <div className="card form-card" style={{ marginTop: 16 }}>
