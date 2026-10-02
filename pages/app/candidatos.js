@@ -163,6 +163,7 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
   const [vagaFormId, setVagaFormId] = useState(null);
   const [showManual, setShowManual] = useState(false);
   const [soSemRetorno, setSoSemRetorno] = useState(false);
+  const [abaCandidatos, setAbaCandidatos] = useState('todos');
   const vagaTitulo = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
   const vagaById = (id) => vagas.find((v) => v.id === id);
   const pessoaById = (id) => pessoas.find((p) => p.id === id);
@@ -180,7 +181,22 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
   );
   const idsSemRetorno = new Set(semRetornoGerente.map((c) => c.id));
 
+  // Candidatos com a 1ª entrevista cancelada ou "não compareceu" e ainda sem parecer — precisam
+  // de uma ação (reagendar ou descartar lá na Agenda) antes de seguirem no fluxo. Mesma condição
+  // usada na coluna "Avaliação e próxima etapa" de cada linha. Saem da aba "Todos" pra não
+  // poluir o pipeline normal e ficam reunidos numa aba própria, só com quem está preso nesse
+  // estado — assim que você reagenda ou descarta, o candidato sai daqui sozinho.
+  const aguardandoAvaliacao = candidatos.filter(
+    (c) => Boolean(c.entrevista) && !c.parecer && (c.entrevista.status === 'cancelada' || c.entrevista.status === 'nao_compareceu')
+  );
+  const idsAguardandoAvaliacao = new Set(aguardandoAvaliacao.map((c) => c.id));
+
   const filtrados = candidatos.filter((c) => {
+    if (abaCandidatos === 'aguardando_avaliacao') {
+      if (!idsAguardandoAvaliacao.has(c.id)) return false;
+    } else if (idsAguardandoAvaliacao.has(c.id)) {
+      return false;
+    }
     if (soSemRetorno && !idsSemRetorno.has(c.id)) return false;
     if (busca && !(c.nome.toLowerCase().includes(busca.toLowerCase()) || (c.email || '').toLowerCase().includes(busca.toLowerCase()))) return false;
     if (fStatus && c.status !== fStatus) return false;
@@ -223,6 +239,22 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
         </div>
       ) : null}
       {showManual ? <CadastroManualForm vagas={vagas} onCancel={() => setShowManual(false)} /> : null}
+      <div className="tabs" style={{ marginTop: 16, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className={`btn btn-sm ${abaCandidatos === 'todos' ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => setAbaCandidatos('todos')}
+        >
+          Todos
+        </button>
+        <button
+          type="button"
+          className={`btn btn-sm ${abaCandidatos === 'aguardando_avaliacao' ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => setAbaCandidatos('aguardando_avaliacao')}
+        >
+          Aguardando avaliação ({aguardandoAvaliacao.length})
+        </button>
+      </div>
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-pad" style={{ paddingBottom: 0 }}>
           <div className="toolbar">
@@ -255,7 +287,11 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
         </div>
         <div className="table-wrap">
           {filtrados.length === 0 ? (
-            <div className="empty">Nenhum candidato encontrado neste filtro.</div>
+            <div className="empty">
+              {abaCandidatos === 'aguardando_avaliacao'
+                ? 'Nenhum candidato esperando reagendar ou descartar a 1ª entrevista — tudo em dia 🎉'
+                : 'Nenhum candidato encontrado neste filtro.'}
+            </div>
           ) : (
             <table>
               <thead>

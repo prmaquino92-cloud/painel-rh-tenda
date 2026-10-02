@@ -13,18 +13,34 @@ const LABEL_TIPO_EVENTO = {
   editado: 'Dados atualizados',
 };
 
+// Mensagem de abordagem padrão, usada pra todo mundo exceto as origens com mensagem própria
+// listadas em MENSAGEM_ABORDAGEM_POR_ORIGEM logo abaixo.
+function mensagemAbordagemPadrao(primeiroNome) {
+  const saudacao = primeiroNome ? `Olá ${primeiroNome}` : 'Olá';
+  return `${saudacao}, tudo bem? Aqui é da Tenda Vendas! Vi seu cadastro e gostaria de conversar sobre a oportunidade de se tornar um corretor parceiro. Podemos falar agora?`;
+}
+
+// Origens com um texto de abordagem próprio (pedido pelo Pedro) em vez do padrão acima. A
+// função recebe o primeiro nome do lead (pode vir vazio) e devolve a mensagem já pronta.
+const MENSAGEM_ABORDAGEM_POR_ORIGEM = {
+  leads_gerente_rafael: (primeiroNome) => {
+    const saudacao = primeiroNome ? `Oi, ${primeiroNome}, tudo bem?` : 'Oi, tudo bem?';
+    return `${saudacao} Aqui é o Pedro, do RH da Tenda Vendas.\nTô conversando com alguns corretores aqui da região sobre um modelo em que a comissão cai em torno de 10 dias depois do ato — sem esperar a assinatura na Caixa.\nPosso te mandar como funciona? É rapidinho 🙂`;
+  },
+};
+
 // Monta o link "clique para conversar" a partir do telefone cadastrado — assume DDD + número
 // brasileiro e completa com o código do país (55) quando ainda não vem incluso. Já vem com a
 // mensagem de abordagem pronta (nome do lead incluso), pra abrir o WhatsApp direto na
-// conversa com o texto só esperando o "Enviar".
-function linkWhatsapp(telefone, nome) {
+// conversa com o texto só esperando o "Enviar". A mensagem muda conforme a origem do lead,
+// quando essa origem tem um texto próprio configurado acima.
+function linkWhatsapp(telefone, nome, origem) {
   if (!telefone) return null;
   const digitos = telefone.replace(/\D/g, '');
   if (!digitos) return null;
   const comCodigoPais = digitos.startsWith('55') ? digitos : `55${digitos}`;
   const primeiroNome = (nome || '').trim().split(/\s+/)[0] || '';
-  const saudacao = primeiroNome ? `Olá ${primeiroNome}` : 'Olá';
-  const mensagem = `${saudacao}, tudo bem? Aqui é da Tenda Vendas! Vi seu cadastro e gostaria de conversar sobre a oportunidade de se tornar um corretor parceiro. Podemos falar agora?`;
+  const mensagem = (MENSAGEM_ABORDAGEM_POR_ORIGEM[origem] || mensagemAbordagemPadrao)(primeiroNome);
   return `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
 }
 
@@ -1258,7 +1274,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span>{l.telefone}</span>
                             <a
-                              href={linkWhatsapp(l.telefone, l.nome)}
+                              href={linkWhatsapp(l.telefone, l.nome, l.origem)}
                               target="_blank"
                               rel="noreferrer"
                               title="Chamar no WhatsApp"
@@ -1267,6 +1283,18 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                             >
                               {Icon.whatsapp({ className: 'ic' })}
                             </a>
+                            {l.origem === 'leads_gerente_rafael' ? (
+                              <a
+                                href="/cards/corretores-comissao-10dias.png"
+                                download
+                                target="_blank"
+                                rel="noreferrer"
+                                title="Baixar o card de divulgação pra anexar na conversa — o link do WhatsApp só preenche o texto, não anexa imagem sozinho"
+                                style={{ fontSize: 11, textDecoration: 'underline', whiteSpace: 'nowrap' }}
+                              >
+                                card
+                              </a>
+                            ) : null}
                           </div>
                         ) : (
                           '—'
