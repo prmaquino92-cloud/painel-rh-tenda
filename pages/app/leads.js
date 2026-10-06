@@ -959,6 +959,12 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const [abaLeads, setAbaLeads] = useState('novo');
   const [filtroOrigem, setFiltroOrigem] = useState('todas');
   const [filtroLocalidade, setFiltroLocalidade] = useState('todas');
+  // A tabela de leads mostra só uma página por vez (em vez da aba inteira de uma vez) — com
+  // milhares de leads em "Sem tratar", renderizar tudo junto deixava a página extremamente
+  // pesada e travava o navegador. Volta pra página 1 sempre que a aba ou os filtros mudam, senão
+  // dava pra ficar "preso" numa página 40 que não existe mais depois de trocar de aba.
+  const [paginaLeads, setPaginaLeads] = useState(1);
+  const LEADS_POR_PAGINA = 50;
 
   const vagaNome = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
   const eventosDoLead = (id) => eventos.filter((e) => e.lead_id === id);
@@ -1021,6 +1027,12 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
     porStatusFiltrado[l.status] = (porStatusFiltrado[l.status] || 0) + 1;
   });
   const leadsExibidos = leadsFiltrados.filter((l) => l.status === abaLeads);
+  const totalPaginasLeads = Math.max(1, Math.ceil(leadsExibidos.length / LEADS_POR_PAGINA));
+  const paginaLeadsAtual = Math.min(paginaLeads, totalPaginasLeads);
+  const leadsDaPagina = leadsExibidos.slice(
+    (paginaLeadsAtual - 1) * LEADS_POR_PAGINA,
+    paginaLeadsAtual * LEADS_POR_PAGINA
+  );
 
   const hojeStr = new Date().toISOString().slice(0, 10);
   const contatosHoje = eventos.filter((e) => e.tipo === 'status' && e.criado_em?.slice(0, 10) === hojeStr).length;
@@ -1221,7 +1233,14 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
         <p>Trate cada lead até declinar ou evoluir para candidatura</p>
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-        <select style={{ maxWidth: 220 }} value={filtroOrigem} onChange={(e) => setFiltroOrigem(e.target.value)}>
+        <select
+          style={{ maxWidth: 220 }}
+          value={filtroOrigem}
+          onChange={(e) => {
+            setFiltroOrigem(e.target.value);
+            setPaginaLeads(1);
+          }}
+        >
           <option value="todas">Todas as origens</option>
           {ORIGEM_ORDEM.map((o) => (
             <option key={o} value={o}>
@@ -1229,7 +1248,14 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             </option>
           ))}
         </select>
-        <select style={{ maxWidth: 220 }} value={filtroLocalidade} onChange={(e) => setFiltroLocalidade(e.target.value)}>
+        <select
+          style={{ maxWidth: 220 }}
+          value={filtroLocalidade}
+          onChange={(e) => {
+            setFiltroLocalidade(e.target.value);
+            setPaginaLeads(1);
+          }}
+        >
           <option value="todas">Todas as localidades</option>
           {localidadesDisponiveis.map((loc) => (
             <option key={loc} value={loc}>
@@ -1244,6 +1270,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             onClick={() => {
               setFiltroOrigem('todas');
               setFiltroLocalidade('todas');
+              setPaginaLeads(1);
             }}
           >
             Limpar filtros
@@ -1256,7 +1283,10 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             key={aba.status}
             type="button"
             className={`btn btn-sm ${abaLeads === aba.status ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => setAbaLeads(aba.status)}
+            onClick={() => {
+              setAbaLeads(aba.status);
+              setPaginaLeads(1);
+            }}
           >
             {aba.label} ({porStatusFiltrado[aba.status] || 0})
           </button>
@@ -1290,7 +1320,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                 </tr>
               </thead>
               <tbody>
-                {leadsExibidos.map((l) => {
+                {leadsDaPagina.map((l) => {
                   const st = STATUS_LEAD[l.status];
                   if (evoluindoId === l.id) {
                     return <EvoluirForm key={l.id} lead={l} vagas={vagas} onCancel={() => setEvoluindoId(null)} />;
@@ -1440,6 +1470,29 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             </table>
           )}
         </div>
+        {leadsExibidos.length > LEADS_POR_PAGINA ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderTop: '1px solid var(--border, #e5e5ea)' }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={paginaLeadsAtual <= 1}
+              onClick={() => setPaginaLeads((p) => Math.max(1, p - 1))}
+            >
+              ← Anterior
+            </button>
+            <span style={{ fontSize: 12.3, color: 'var(--ink-faint)' }}>
+              Página {paginaLeadsAtual} de {totalPaginasLeads} · {leadsExibidos.length} leads nessa aba
+            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={paginaLeadsAtual >= totalPaginasLeads}
+              onClick={() => setPaginaLeads((p) => Math.min(totalPaginasLeads, p + 1))}
+            >
+              Próxima →
+            </button>
+          </div>
+        ) : null}
       </div>
     </Layout>
   );
