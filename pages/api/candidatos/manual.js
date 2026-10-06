@@ -75,10 +75,16 @@ export default async function handler(req, res) {
         attendeeNome: nome.trim(),
       });
       if (evento) {
-        await sb.from('entrevistas').update({ google_event_id: evento.eventId, meet_link: evento.meetLink }).eq('id', entrevista.id);
+        await sb
+          .from('entrevistas')
+          .update({ google_event_id: evento.eventId, meet_link: evento.meetLink, meet_erro: null })
+          .eq('id', entrevista.id);
+      } else {
+        await sb.from('entrevistas').update({ meet_erro: 'Google Agenda não conectado' }).eq('id', entrevista.id);
       }
     } catch (e) {
       console.error('Erro ao criar evento no Google Agenda (cadastro manual):', e.message);
+      await sb.from('entrevistas').update({ meet_erro: e.message?.slice(0, 300) || 'Falha ao criar evento no Google Agenda' }).eq('id', entrevista.id);
     }
   }
 

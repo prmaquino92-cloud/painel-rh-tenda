@@ -48,13 +48,18 @@ export default async function handler(req, res) {
   if (entrevista?.google_event_id) {
     try {
       await reagendarEvento({ eventId: entrevista.google_event_id, iso: data, hora, duracaoMin: 30 });
+      await sb.from('entrevistas').update({ meet_erro: null }).eq('id', id);
     } catch (e) {
       console.error('Erro ao reagendar evento no Google Agenda:', e.message);
+      await sb
+        .from('entrevistas')
+        .update({ meet_erro: e.message?.slice(0, 300) || 'Falha ao reagendar evento no Google Agenda' })
+        .eq('id', id);
     }
   } else if (!presencial) {
-    // essa entrevista nunca teve evento (provavelmente foi marcada com o Google desconectado) —
-    // agora que está sendo reagendada, aproveita pra criar o evento com Meet, se o Google
-    // estiver conectado.
+    // essa entrevista nunca teve evento (provavelmente foi marcada com o Google desconectado, ou
+    // a criação falhou na hora — ver meet_erro) — agora que está sendo reagendada, aproveita pra
+    // tentar criar o evento com Meet de novo.
     try {
       const evento = await criarEventoComMeet({
         titulo: `Entrevista Tenda Vendas${entrevista?.vagas?.titulo ? ' — ' + entrevista.vagas.titulo : ''} · ${entrevista?.candidatos?.nome || ''}`,
@@ -66,10 +71,19 @@ export default async function handler(req, res) {
         attendeeNome: entrevista?.candidatos?.nome || null,
       });
       if (evento) {
-        await sb.from('entrevistas').update({ google_event_id: evento.eventId, meet_link: evento.meetLink }).eq('id', id);
+        await sb
+          .from('entrevistas')
+          .update({ google_event_id: evento.eventId, meet_link: evento.meetLink, meet_erro: null })
+          .eq('id', id);
+      } else {
+        await sb.from('entrevistas').update({ meet_erro: 'Google Agenda não conectado' }).eq('id', id);
       }
     } catch (e) {
       console.error('Erro ao criar evento no Google Agenda ao reagendar:', e.message);
+      await sb
+        .from('entrevistas')
+        .update({ meet_erro: e.message?.slice(0, 300) || 'Falha ao criar evento no Google Agenda' })
+        .eq('id', id);
     }
   }
 

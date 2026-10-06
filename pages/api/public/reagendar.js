@@ -81,6 +81,7 @@ export default async function handler(req, res) {
   try {
     if (entrevista.google_event_id) {
       await reagendarEvento({ eventId: entrevista.google_event_id, iso, hora, duracaoMin: 30 });
+      await db.from('entrevistas').update({ meet_erro: null }).eq('id', entrevista.id);
     } else {
       const evento = await criarEventoComMeet({
         titulo: `Entrevista Tenda Vendas${entrevista.vagas?.titulo ? ' — ' + entrevista.vagas.titulo : ''} · ${nome}`,
@@ -93,11 +94,20 @@ export default async function handler(req, res) {
       });
       if (evento) {
         meetLink = evento.meetLink;
-        await db.from('entrevistas').update({ google_event_id: evento.eventId, meet_link: evento.meetLink }).eq('id', entrevista.id);
+        await db
+          .from('entrevistas')
+          .update({ google_event_id: evento.eventId, meet_link: evento.meetLink, meet_erro: null })
+          .eq('id', entrevista.id);
+      } else {
+        await db.from('entrevistas').update({ meet_erro: 'Google Agenda não conectado' }).eq('id', entrevista.id);
       }
     }
   } catch (e) {
     console.error('Erro ao atualizar evento no Google Agenda na remarcação:', e.message);
+    await db
+      .from('entrevistas')
+      .update({ meet_erro: e.message?.slice(0, 300) || 'Falha ao atualizar evento no Google Agenda' })
+      .eq('id', entrevista.id);
   }
 
   res.status(200).json({ ok: true, meetLink });

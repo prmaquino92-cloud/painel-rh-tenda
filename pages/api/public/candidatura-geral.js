@@ -108,11 +108,17 @@ export default async function handler(req, res) {
       meetLink = evento.meetLink;
       await db
         .from('entrevistas')
-        .update({ google_event_id: evento.eventId, meet_link: evento.meetLink })
+        .update({ google_event_id: evento.eventId, meet_link: evento.meetLink, meet_erro: null })
         .eq('id', entrevista.id);
+    } else {
+      await db.from('entrevistas').update({ meet_erro: 'Google Agenda não conectado' }).eq('id', entrevista.id);
     }
   } catch (e) {
     console.error('Erro ao criar evento no Google Agenda:', e.message);
+    await db
+      .from('entrevistas')
+      .update({ meet_erro: e.message?.slice(0, 300) || 'Falha ao criar evento no Google Agenda' })
+      .eq('id', entrevista.id);
   }
 
   res.status(200).json({ ok: true, meetLink });

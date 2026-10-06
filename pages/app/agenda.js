@@ -151,13 +151,21 @@ function TabelaEntrevistas({ entrevistas, reagendandoId, setReagendandoId, pesso
                       )}
                     </div>
                   ) : (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.3, color: 'var(--ink-faint)' }}>
+                    <span
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12.3, color: 'var(--ink-faint)' }}
+                      title={!e.meet_link && e.meet_erro ? e.meet_erro : undefined}
+                    >
                       {e.meet_link ? (
                         <a href={e.meet_link} target="_blank" rel="noreferrer">
                           {Icon.meet({ className: 'ic' })} entrar
                         </a>
                       ) : (
-                        <>{Icon.meet({ className: 'ic' })} pendente de conexão</>
+                        <>
+                          {Icon.meet({ className: 'ic' })} pendente de conexão
+                          {e.meet_erro ? (
+                            <span style={{ color: 'var(--danger, #c0392b)' }}> — {e.meet_erro}</span>
+                          ) : null}
+                        </>
                       )}
                     </span>
                   )}
