@@ -149,6 +149,11 @@ function TabelaEntrevistas({ entrevistas, reagendandoId, setReagendandoId, pesso
                       ) : (
                         <span style={{ marginTop: 4, display: 'inline-block' }}>Aguardando feedback do gerente</span>
                       )}
+                      {!e.google_event_id && e.meet_erro ? (
+                        <div style={{ marginTop: 4, color: 'var(--danger, #c0392b)' }}>
+                          Convite não foi enviado — {e.meet_erro}. Clique em "Reagendar" (mesmo horário) pra tentar de novo.
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <span

@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
 import { isAuthenticated } from '../../../../lib/auth';
-import { reagendarEvento, criarEventoComMeet } from '../../../../lib/google';
+import { reagendarEvento, criarEventoComMeet, criarEventoPresencial } from '../../../../lib/google';
 
 // Reagenda uma entrevista para nova data/horário: atualiza data/hora no painel e, se ela tinha
 // evento no Google Agenda, move o mesmo evento (mantém o link de Meet e os convidados) em vez
@@ -28,7 +28,7 @@ export default async function handler(req, res) {
   const sb = supabaseAdmin();
   const { data: entrevista } = await sb
     .from('entrevistas')
-    .select('google_event_id, tipo, candidatos(nome,email), vagas(titulo)')
+    .select('google_event_id, tipo, gerente_id, unidade_id, feedback_token, candidatos(nome,email), vagas(titulo)')
     .eq('id', id)
     .maybeSingle();
 
@@ -83,6 +83,51 @@ export default async function handler(req, res) {
       await sb
         .from('entrevistas')
         .update({ meet_erro: e.message?.slice(0, 300) || 'Falha ao criar evento no Google Agenda' })
+        .eq('id', id);
+    }
+  } else if (presencial) {
+    // 2ª entrevista (presencial) que nunca teve convite criado — provavelmente a criação
+    // falhou na hora em que foi marcada (ver meet_erro) e, sem o convite, nem o candidato nem
+    // o gerente foram avisados, nem o gerente recebeu o link pra deixar o parecer. Agora que
+    // está sendo reagendada, aproveita pra tentar criar o convite de novo.
+    try {
+      const [{ data: gerente }, { data: unidade }] = await Promise.all([
+        entrevista?.gerente_id ? sb.from('pessoas').select('id,nome,email').eq('id', entrevista.gerente_id).maybeSingle() : { data: null },
+        entrevista?.unidade_id
+          ? sb.from('unidades').select('id,nome,cidade,estado,endereco').eq('id', entrevista.unidade_id).maybeSingle()
+          : { data: null },
+      ]);
+      const proto = req.headers['x-forwarded-proto'] || 'https';
+      const baseUrl = `${proto}://${req.headers.host}`;
+      const local = unidade
+        ? [unidade.nome, unidade.endereco, unidade.cidade && unidade.estado ? `${unidade.cidade}/${unidade.estado}` : null].filter(Boolean).join(' — ')
+        : undefined;
+      const descricaoPartes = [`2ª entrevista (presencial) — ${entrevista?.candidatos?.nome || ''} para a vaga na unidade ${unidade?.nome || ''}.`];
+      if (entrevista?.feedback_token) {
+        descricaoPartes.push(`Gerente: por favor registre seu parecer após a conversa em ${baseUrl}/p/feedback/${entrevista.feedback_token}`);
+      }
+      const evento = await criarEventoPresencial({
+        titulo: `Entrevista presencial Tenda Vendas — ${entrevista?.candidatos?.nome || ''}`,
+        descricao: descricaoPartes.join('\n'),
+        local,
+        iso: data,
+        hora,
+        duracaoMin: 30,
+        attendees: [
+          { email: entrevista?.candidatos?.email, nome: entrevista?.candidatos?.nome },
+          { email: gerente?.email, nome: gerente?.nome },
+        ],
+      });
+      if (evento) {
+        await sb.from('entrevistas').update({ google_event_id: evento.eventId, meet_erro: null }).eq('id', id);
+      } else {
+        await sb.from('entrevistas').update({ meet_erro: 'Google Agenda não conectado' }).eq('id', id);
+      }
+    } catch (e) {
+      console.error('Erro ao criar convite da 2ª entrevista no Google Agenda ao reagendar:', e.message);
+      await sb
+        .from('entrevistas')
+        .update({ meet_erro: e.message?.slice(0, 300) || 'Falha ao criar convite no Google Agenda' })
         .eq('id', id);
     }
   }

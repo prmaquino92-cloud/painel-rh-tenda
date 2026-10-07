@@ -160,10 +160,16 @@ export default async function handler(req, res) {
       ],
     });
     if (evento) {
-      await sb.from('entrevistas').update({ google_event_id: evento.eventId }).eq('id', entrevista.id);
+      await sb.from('entrevistas').update({ google_event_id: evento.eventId, meet_erro: null }).eq('id', entrevista.id);
+    } else {
+      await sb.from('entrevistas').update({ meet_erro: 'Google Agenda não conectado' }).eq('id', entrevista.id);
     }
   } catch (e) {
     console.error('Erro ao criar convite da 2ª entrevista no Google Agenda:', e.message);
+    await sb
+      .from('entrevistas')
+      .update({ meet_erro: e.message?.slice(0, 300) || 'Falha ao criar convite no Google Agenda' })
+      .eq('id', entrevista.id);
   }
 
   res.writeHead(302, { Location: '/app/candidatos' });
