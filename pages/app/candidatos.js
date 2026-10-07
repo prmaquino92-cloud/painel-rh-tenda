@@ -153,7 +153,7 @@ function VagaForm(props) {
   );
 }
 
-export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro }) {
+export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseUrl, erro }) {
   const [busca, setBusca] = useState('');
   const [fStatus, setFStatus] = useState('');
   const [fVaga, setFVaga] = useState('');
@@ -164,6 +164,20 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
   const [showManual, setShowManual] = useState(false);
   const [soSemRetorno, setSoSemRetorno] = useState(false);
   const [abaCandidatos, setAbaCandidatos] = useState('todos');
+  // Qual link de avaliação (feedback do gerente) foi copiado por último, só pra mostrar "copiado!"
+  // no botão certo por um instante — guarda o id da entrevista, não um booleano único.
+  const [linkCopiadoId, setLinkCopiadoId] = useState(null);
+
+  function copiarLinkAvaliacao(entrevistaId, token) {
+    const link = `${baseUrl}/p/feedback/${token}`;
+    navigator.clipboard
+      ?.writeText(link)
+      .then(() => {
+        setLinkCopiadoId(entrevistaId);
+        setTimeout(() => setLinkCopiadoId((atual) => (atual === entrevistaId ? null : atual)), 2500);
+      })
+      .catch(() => {});
+  }
   const vagaTitulo = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
   const vagaById = (id) => vagas.find((v) => v.id === id);
   const pessoaById = (id) => pessoas.find((p) => p.id === id);
@@ -441,6 +455,17 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, erro 
                                 ) : (
                                   <div className="row-sub" style={{ marginTop: 3 }}>Aguardando feedback do gerente</div>
                                 )}
+                                {!c.entrevistaRodada2.feedback_em && c.entrevistaRodada2.feedback_token ? (
+                                  <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    style={{ marginTop: 4, fontSize: 11, padding: '2px 6px' }}
+                                    title="Copia o link onde o gerente deixa o parecer — útil se o convite do Google não chegou pra ele"
+                                    onClick={() => copiarLinkAvaliacao(c.entrevistaRodada2.id, c.entrevistaRodada2.feedback_token)}
+                                  >
+                                    {linkCopiadoId === c.entrevistaRodada2.id ? 'Link copiado ✓' : 'Copiar link de avaliação do gerente'}
+                                  </button>
+                                ) : null}
                                 {c.status === 'aguardando_rh' || c.status === 'aguardando_candidato' || gerenteNaoAvaliou ? (
                                   <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                                     <form method="POST" action={`/api/candidatos/${c.id}/resolver`}>
@@ -548,5 +573,7 @@ export async function getServerSideProps(context) {
   const redirect = requireAuth(context);
   if (redirect) return redirect;
   const [candidatos, vagas, pessoas, unidades] = await Promise.all([getCandidatosComEntrevista(), getVagas(), getPessoas(), getUnidades()]);
-  return { props: { candidatos, vagas, pessoas, unidades, erro: context.query.erro === '1' } };
+  const proto = context.req.headers['x-forwarded-proto'] || 'https';
+  const baseUrl = `${proto}://${context.req.headers.host}`;
+  return { props: { candidatos, vagas, pessoas, unidades, baseUrl, erro: context.query.erro === '1' } };
 }
