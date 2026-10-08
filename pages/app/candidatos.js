@@ -466,6 +466,31 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
                                     {linkCopiadoId === c.entrevistaRodada2.id ? 'Link copiado ✓' : 'Copiar link de avaliação do gerente'}
                                   </button>
                                 ) : null}
+                                {!c.entrevistaRodada2.feedback_em && c.status === 'segunda_entrevista_agendada' ? (
+                                  <form
+                                    method="POST"
+                                    action={`/api/candidatos/${c.id}/desfazer-avaliacao`}
+                                    style={{ marginTop: 4 }}
+                                    onSubmit={(ev) => {
+                                      if (
+                                        !window.confirm(
+                                          'Desfazer essa avaliação? Apaga o parecer e a 2ª entrevista marcada, e volta o candidato pra "Entrevistado" pra avaliar de novo. Não dá pra desfazer essa ação.'
+                                        )
+                                      ) {
+                                        ev.preventDefault();
+                                      }
+                                    }}
+                                  >
+                                    <button
+                                      type="submit"
+                                      className="btn btn-ghost btn-sm"
+                                      style={{ fontSize: 11, padding: '2px 6px', color: 'var(--danger)' }}
+                                      title="Pra quando a avaliação/2ª entrevista foi marcada no candidato errado por engano"
+                                    >
+                                      Desfazer avaliação
+                                    </button>
+                                  </form>
+                                ) : null}
                                 {c.status === 'aguardando_rh' || c.status === 'aguardando_candidato' || gerenteNaoAvaliou ? (
                                   <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                                     <form method="POST" action={`/api/candidatos/${c.id}/resolver`}>
