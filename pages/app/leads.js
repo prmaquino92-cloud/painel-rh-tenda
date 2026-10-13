@@ -528,9 +528,9 @@ function LimparDuplicados() {
     <div className="card form-card" style={{ marginTop: 16 }}>
       <div className="card-pad">
         <div className="hint" style={{ marginBottom: 10 }}>
-          Verifica leads com o mesmo telefone e o mesmo nome cadastrados mais de uma vez (ex: reimportação da mesma planilha) e mantém
-          só 1 de cada — dando preferência ao que já está mais avançado no funil. Leads onde o mesmo telefone tem nomes diferentes não
-          são tocados.
+          Verifica leads com o mesmo telefone cadastrados mais de uma vez (ex: reimportação da mesma planilha, ou nome digitado diferente
+          da segunda vez) e mantém só 1 de cada — dando preferência ao que já está mais avançado no funil. Quando o nome varia entre os
+          duplicados do mesmo telefone, mostra aqui embaixo quais nomes apareciam, pra você conferir antes de excluir.
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-outline btn-sm" type="button" onClick={checar} disabled={checando || excluindo}>
@@ -549,13 +549,14 @@ function LimparDuplicados() {
               {relatorio.gruposDuplicados} grupo(s) duplicado(s) encontrado(s) — {relatorio.linhasQueSeriamExcluidas} linha(s) seriam
               excluídas, mantendo {relatorio.linhasQueSeriamMantidas}. Total de leads hoje: {relatorio.totalLeads}.
             </div>
-            {relatorio.gruposAmbiguosIgnorados?.length ? (
+            {relatorio.gruposComNomesDiferentes?.length ? (
               <div style={{ marginTop: 6 }}>
-                {relatorio.gruposAmbiguosIgnorados.length} telefone(s) com nomes diferentes foram ignorados (revisar manualmente):
+                {relatorio.gruposComNomesDiferentes.length} telefone(s) com nomes diferentes entre os duplicados — fica o nome de quem
+                tiver o status mais avançado no funil:
                 <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                  {relatorio.gruposAmbiguosIgnorados.map((a) => (
+                  {relatorio.gruposComNomesDiferentes.map((a) => (
                     <li key={a.telefone}>
-                      {a.telefone}: {a.nomes.join(' / ')}
+                      {a.telefone}: {a.nomes.join(' / ')} — fica como "{a.nomeMantido}"
                     </li>
                   ))}
                 </ul>

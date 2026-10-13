@@ -2,8 +2,12 @@ import { supabaseAdmin } from '../../../lib/supabase';
 import { isAuthenticated } from '../../../lib/auth';
 import { getLeads } from '../../../lib/data';
 
-// Remove leads duplicados (mesmo telefone + mesmo nome). Nunca toca em grupos onde o mesmo
-// telefone aparece com nomes DIFERENTES (esses ficam pra revisão manual).
+// Remove leads duplicados pelo MESMO TELEFONE — mesmo quando o nome cadastrado varia entre eles
+// (ex.: "vitoria conte" / "vitoria dal conte"), já que o telefone sozinho já identifica a mesma
+// pessoa na prática (erro de digitação do nome, apelido, nome de solteira etc.). Antes esses
+// casos de nomes diferentes ficavam de fora, exigindo revisão manual um por um — agora entram
+// na mesma varredura, e o relatório mostra quais nomes apareciam em cada telefone mesclado, pra
+// você conferir antes de excluir.
 // Dentro de cada grupo de duplicados, mantém o lead com status mais avançado (convertido >
 // declinado > sem_contato > novo) e, em caso de empate, o mais antigo — pra não perder
 // trabalho já feito em algum dos duplicados.
@@ -43,38 +47,21 @@ export default async function handler(req, res) {
 
   const leads = await getLeads();
 
-  // agrupa por telefone+nome (duplicados de verdade)
+  // agrupa só por telefone — o nome não entra mais na chave, de propósito (ver nota acima)
   const grupos = new Map();
   leads.forEach((l) => {
     const tel = normTelefone(l.telefone);
     if (tel.length < 10) return; // sem telefone válido, não entra nessa limpeza
-    const nome = normNome(l.nome);
-    const chave = `${tel}|${nome}`;
-    if (!grupos.has(chave)) grupos.set(chave, []);
-    grupos.get(chave).push(l);
+    if (!grupos.has(tel)) grupos.set(tel, []);
+    grupos.get(tel).push(l);
   });
-
-  // telefones onde aparecem nomes DIFERENTES — ambíguo, não apaga
-  const porTelefone = new Map();
-  leads.forEach((l) => {
-    const tel = normTelefone(l.telefone);
-    if (tel.length < 10) return;
-    if (!porTelefone.has(tel)) porTelefone.set(tel, new Set());
-    porTelefone.get(tel).add(normNome(l.nome));
-  });
-  const telefonesAmbiguos = new Set(
-    Array.from(porTelefone.entries())
-      .filter(([, nomes]) => nomes.size > 1)
-      .map(([tel]) => tel)
-  );
 
   const idsParaExcluir = [];
   const idsParaManter = [];
   const relatorioGrupos = [];
+  const gruposComNomesDiferentes = [];
 
-  for (const [chave, itens] of grupos.entries()) {
-    const tel = chave.split('|')[0];
-    if (telefonesAmbiguos.has(tel)) continue;
+  for (const [tel, itens] of grupos.entries()) {
     if (itens.length < 2) continue;
 
     const ordenados = [...itens].sort((a, b) => {
@@ -95,12 +82,16 @@ export default async function handler(req, res) {
       excluidos: excluir.map((l) => l.id),
       total_no_grupo: itens.length,
     });
-  }
 
-  const ambiguos = Array.from(telefonesAmbiguos).map((tel) => ({
-    telefone: tel,
-    nomes: Array.from(porTelefone.get(tel)),
-  }));
+    const nomesDistintos = Array.from(new Set(itens.map((l) => normNome(l.nome))));
+    if (nomesDistintos.length > 1) {
+      gruposComNomesDiferentes.push({
+        telefone: manter.telefone,
+        nomeMantido: manter.nome,
+        nomes: Array.from(new Set(itens.map((l) => l.nome))),
+      });
+    }
+  }
 
   if (req.method === 'GET') {
     res.status(200).json({
@@ -109,7 +100,7 @@ export default async function handler(req, res) {
       gruposDuplicados: relatorioGrupos.length,
       linhasQueSeriamExcluidas: idsParaExcluir.length,
       linhasQueSeriamMantidas: idsParaManter.length,
-      gruposAmbiguosIgnorados: ambiguos,
+      gruposComNomesDiferentes,
       amostraGrupos: relatorioGrupos.slice(0, 20),
     });
     return;
@@ -134,6 +125,6 @@ export default async function handler(req, res) {
     gruposDuplicados: relatorioGrupos.length,
     linhasExcluidas: excluidas,
     linhasMantidas: idsParaManter.length,
-    gruposAmbiguosIgnorados: ambiguos,
+    gruposComNomesDiferentes,
   });
 }
