@@ -778,6 +778,123 @@ function RevisarEvoluidos() {
   );
 }
 
+// Pontual: marca como "Em tratamento" os leads de uma lista de contatos que já tiveram conversa
+// real confirmada no WhatsApp (conferência manual feita fora do painel), mas que aqui ainda
+// aparecem como "Novo"/"Sem contato". Não usa "Convertido" de propósito — isso é reservado pra
+// quem já virou candidatura de verdade.
+function MarcarContatadosWhatsapp() {
+  const [checando, setChecando] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  async function checar() {
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const r = await fetch('/api/leads/marcar-contatados-whatsapp', { method: 'GET' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível verificar os leads.');
+      } else {
+        setRelatorio(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function aplicar() {
+    if (!relatorio) return;
+    const ok = window.confirm(
+      `Isso vai marcar ${relatorio.totalParaAtualizar} lead(s) como "Em tratamento", porque já teve conversa real confirmada no WhatsApp. O status anterior fica registrado no histórico de cada um. Confirma?`
+    );
+    if (!ok) return;
+    setAplicando(true);
+    setErro('');
+    try {
+      const r = await fetch('/api/leads/marcar-contatados-whatsapp', { method: 'POST' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível atualizar os leads.');
+      } else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Ferramenta pontual: cruza uma lista de contatos com conversa real confirmada no WhatsApp (conferência manual feita em
+          13/10/2026) com os leads cadastrados pelo telefone. Quem estiver "Novo" ou "Sem contato" é movido pra "Em tratamento" —
+          não mexe em quem já está "Convertido" ou "Declinado".
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-outline btn-sm" type="button" onClick={checar} disabled={checando || aplicando}>
+            {checando ? 'Verificando...' : 'Verificar contatos do WhatsApp'}
+          </button>
+          {relatorio && relatorio.totalParaAtualizar > 0 ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={aplicar} disabled={aplicando}>
+              {aplicando ? 'Atualizando...' : `Marcar ${relatorio.totalParaAtualizar} como em tratamento`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              {relatorio.totalLeadsEncontrados} de {relatorio.totalContatosLista} contato(s) da lista foram encontrados nos leads
+              ({relatorio.totalParaAtualizar} pra atualizar, {relatorio.jaEmTratamento} já em tratamento, {relatorio.jaAvancados} já
+              mais avançados — não serão tocados).
+            </div>
+            {relatorio.totalParaAtualizar > 0 ? (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer' }}>Ver quem vai mudar ({relatorio.amostra.length} de {relatorio.totalParaAtualizar})</summary>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                  {relatorio.amostra.map((a) => (
+                    <li key={a.leadId}>
+                      "{a.nome}" ({a.telefone || 'sem telefone'}) — status atual: {STATUS_LEAD[a.statusAtual]?.label || a.statusAtual}{' '}
+                      (contato: {a.contatoWhatsapp}).
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            {relatorio.naoEncontrados.length ? (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer' }}>Contatos da lista não encontrados nos leads ({relatorio.naoEncontrados.length})</summary>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                  {relatorio.naoEncontrados.map((nome) => (
+                    <li key={nome}>{nome}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.linhasAtualizadas} lead(s) marcado(s) como "Em tratamento". Recarregue a página pra ver os números
+            atualizados.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function EditarForm({ lead, vagas, onCancel }) {
   return (
     <tr>
@@ -946,6 +1063,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const [showLimpar, setShowLimpar] = useState(false);
   const [showLimparIncompletos, setShowLimparIncompletos] = useState(false);
   const [showRevisar, setShowRevisar] = useState(false);
+  const [showContatosWhatsapp, setShowContatosWhatsapp] = useState(false);
   const [showAtualizarCandidatos, setShowAtualizarCandidatos] = useState(false);
   const [showAtualizarLeads, setShowAtualizarLeads] = useState(false);
   // Feedback, por lead, de se o card de divulgação foi copiado com sucesso pra área de
@@ -1077,6 +1195,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
           <button className="btn btn-outline" onClick={() => setShowRevisar((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Verificar já evoluídos
           </button>
+          <button className="btn btn-outline" onClick={() => setShowContatosWhatsapp((v) => !v)}>
+            {Icon.plus({ className: 'ic' })} Marcar contatados no WhatsApp
+          </button>
           <button className="btn btn-outline" onClick={() => setShowAtualizarCandidatos((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Atualizar candidatos (origem/localidade)
           </button>
@@ -1093,6 +1214,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
       {showLimpar ? <LimparDuplicados /> : null}
       {showLimparIncompletos ? <LimparIncompletos /> : null}
       {showRevisar ? <RevisarEvoluidos /> : null}
+      {showContatosWhatsapp ? <MarcarContatadosWhatsapp /> : null}
       {showAtualizarCandidatos ? <AtualizarCandidatosOrigem /> : null}
       {showAtualizarLeads ? <AtualizarLeadsOrigem /> : null}
 
