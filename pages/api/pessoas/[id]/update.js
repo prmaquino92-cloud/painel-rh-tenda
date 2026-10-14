@@ -23,7 +23,20 @@ export default async function handler(req, res) {
     res.end();
     return;
   }
-  const { error } = await supabaseAdmin()
+
+  const sb = supabaseAdmin();
+
+  // O formulário de edição só oferece "Ativo"/"Convite pendente" — pra quem está desligado,
+  // esse campo nem aparece (desligar/reativar tem fluxo próprio, com data e motivo). Sem status
+  // no corpo da requisição, preserva o status atual em vez de forçar "ativo" por omissão —
+  // senão editar o telefone de alguém desligado reativava a pessoa sem querer.
+  let statusFinal = status === 'convite_pendente' || status === 'ativo' ? status : null;
+  if (!statusFinal) {
+    const { data: atual } = await sb.from('pessoas').select('status').eq('id', id).maybeSingle();
+    statusFinal = atual?.status || 'ativo';
+  }
+
+  const { error } = await sb
     .from('pessoas')
     .update({
       nome: nome.trim(),
@@ -32,7 +45,7 @@ export default async function handler(req, res) {
       papel,
       superior_id: superior_id || null,
       unidade_id: unidade_id || null,
-      status: status === 'convite_pendente' ? 'convite_pendente' : 'ativo',
+      status: statusFinal,
     })
     .eq('id', id);
   if (error) {

@@ -6,7 +6,7 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type status_pessoa as enum ('ativo','convite_pendente');
+  create type status_pessoa as enum ('ativo','convite_pendente','desligado');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
@@ -30,7 +30,7 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type status_lead as enum ('novo','sem_contato','declinado','convertido');
+  create type status_lead as enum ('novo','em_tratamento','sem_contato','declinado','convertido');
 exception when duplicate_object then null; end $$;
 
 create table if not exists unidades (
@@ -51,6 +51,8 @@ create table if not exists pessoas (
   superior_id uuid references pessoas(id) on delete set null,
   unidade_id uuid references unidades(id) on delete set null,
   status status_pessoa not null default 'ativo',
+  desligado_em date,
+  motivo_desligamento text,
   criado_em timestamptz not null default now()
 );
 

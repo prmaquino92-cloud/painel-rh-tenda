@@ -1,9 +1,21 @@
 import Link from 'next/link';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
-import { getEntrevistasAgendadas, getCandidatosComEntrevista, getLeads } from '../../lib/data';
-import { fmtData, agoraSaoPaulo, ORIGEM_LABEL, ORIGEM_ORDEM } from '../../lib/domain';
-import { MES_LABEL, addDias, inicioSemana, fimDoMes, mesAnterior, mesSeguinte, calcularMetricas, calcularFunilOrigem, pct, fmtPct } from '../../lib/relatorios';
+import { getEntrevistasAgendadas, getCandidatosComEntrevista, getLeads, getVagas, getPessoas } from '../../lib/data';
+import { fmtData, agoraSaoPaulo, ORIGEM_LABEL, ORIGEM_ORDEM, PAPEL_LABEL } from '../../lib/domain';
+import {
+  MES_LABEL,
+  addDias,
+  inicioSemana,
+  fimDoMes,
+  mesAnterior,
+  mesSeguinte,
+  calcularMetricas,
+  calcularFunilAgrupado,
+  calcularTurnover,
+  pct,
+  fmtPct,
+} from '../../lib/relatorios';
 
 function Tile({ label, value, sub }) {
   return (
@@ -102,14 +114,17 @@ function FunilCaptacao({ linha }) {
   );
 }
 
-function TabelaPorOrigem({ linhas, total, origemAtual }) {
+// Tabela comparativa do funil agrupado por uma dimensão (origem, vaga ou equipe) — reaproveitada
+// pelas três seções abaixo, só muda a coluna da esquerda (resolverLabel decide o texto) e,
+// opcionalmente, qual linha destacar (chaveAtual, só usado na tabela de origem hoje).
+function TabelaAgrupada({ colunaChave, linhas, total, resolverLabel, chaveAtual, labelVazio }) {
   return (
     <div className="card">
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Origem</th>
+              <th>{colunaChave}</th>
               <th>Leads captados</th>
               <th>Candidaturas</th>
               <th>Taxa de conversão</th>
@@ -124,13 +139,13 @@ function TabelaPorOrigem({ linhas, total, origemAtual }) {
             {linhas.length === 0 ? (
               <tr>
                 <td colSpan={9} className="empty">
-                  Nenhum movimento em nenhuma origem nesse mês.
+                  {labelVazio}
                 </td>
               </tr>
             ) : (
               linhas.map((l) => (
-                <tr key={l.origem} style={origemAtual === l.origem ? { background: 'var(--primary-tint)' } : undefined}>
-                  <td className="row-title">{ORIGEM_LABEL[l.origem] || l.origem}</td>
+                <tr key={String(l.chave)} style={chaveAtual !== undefined && chaveAtual === l.chave ? { background: 'var(--primary-tint)' } : undefined}>
+                  <td className="row-title">{resolverLabel(l.chave)}</td>
                   <td className="num">{l.leadsCaptados}</td>
                   <td className="num">{l.candidaturas}</td>
                   <td className="num">{fmtPct(l.taxaConversao)}</td>
@@ -164,7 +179,104 @@ function TabelaPorOrigem({ linhas, total, origemAtual }) {
   );
 }
 
-export default function Relatorios({ semana, mes, origemAtual, funilPorOrigem, funilTotal, funilFiltrado, geradoEm }) {
+// Turnover da equipe no mês — desligamentos (contados pela data do desligamento, mesmo que a
+// pessoa tenha sido reativada depois), a equipe de referência e a taxa sobre ela, com a quebra
+// por motivo e a lista individual pra auditoria.
+function Turnover({ turnover }) {
+  return (
+    <>
+      <div className="grid grid-3" style={{ marginBottom: 16 }}>
+        <Tile label="Desligamentos no mês" value={turnover.totalDesligamentos} />
+        <Tile label="Equipe de referência" value={turnover.headcountReferencia} sub={`${turnover.ativosAtuais} ativos hoje`} />
+        <Tile label="Taxa de turnover" value={fmtPct(turnover.taxaTurnover)} />
+      </div>
+      <div className="grid" style={{ gridTemplateColumns: '1fr 1.6fr', gap: 16, alignItems: 'start', marginBottom: 16 }}>
+        <div className="card">
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Motivo</th>
+                  <th>Desligamentos</th>
+                </tr>
+              </thead>
+              <tbody>
+                {turnover.porMotivo.length === 0 ? (
+                  <tr>
+                    <td colSpan={2} className="empty">
+                      Nenhum desligamento nesse mês.
+                    </td>
+                  </tr>
+                ) : (
+                  turnover.porMotivo.map((m) => (
+                    <tr key={m.motivo}>
+                      <td className="row-title">{m.motivo}</td>
+                      <td className="num">{m.total}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="card">
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pessoa</th>
+                  <th>Papel</th>
+                  <th>Desligado em</th>
+                  <th>Motivo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {turnover.desligamentos.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="empty">
+                      Nenhum desligamento nesse mês.
+                    </td>
+                  </tr>
+                ) : (
+                  turnover.desligamentos.map((p) => (
+                    <tr key={p.id}>
+                      <td className="row-title">{p.nome}</td>
+                      <td>{PAPEL_LABEL[p.papel] || '—'}</td>
+                      <td className="row-sub">{fmtData(p.desligado_em)}</td>
+                      <td className="row-sub">{p.motivo_desligamento || '—'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+const LEGENDA_PERIODO =
+  'leads e candidaturas contados por quando entraram no painel; entrevistados e aprovados, pela data da entrevista; contratados e descartados, por quando o status mudou.';
+
+export default function Relatorios({
+  semana,
+  mes,
+  origemAtual,
+  funilPorOrigem,
+  funilTotal,
+  funilFiltrado,
+  funilPorVaga,
+  funilTotalVaga,
+  vagasPorId,
+  funilPorEquipe,
+  funilTotalEquipe,
+  pessoasPorId,
+  turnover,
+  geradoEm,
+}) {
+  const mesLabel = `${MES_LABEL[Number(mes.mesIso.slice(5, 7)) - 1]} de ${mes.mesIso.slice(0, 4)}`;
+
   return (
     <Layout active="relatorios" crumb="Recrutamento" title="Relatórios">
       <div className="print-header">
@@ -176,7 +288,7 @@ export default function Relatorios({ semana, mes, origemAtual, funilPorOrigem, f
       </div>
 
       <p style={{ fontSize: 12.8, color: 'var(--ink-soft)', maxWidth: 620, marginBottom: 14 }}>
-        Produção de recrutamento: volume de entrevistas, taxa de realização, o que avançou no funil e o desempenho de cada canal de captação —
+        Produção de recrutamento: volume de entrevistas, taxa de realização, o que avançou no funil e o desempenho por origem, vaga e equipe —
         visão semanal e mensal. Navegue entre períodos com os botões acima de cada bloco.
       </p>
 
@@ -216,7 +328,7 @@ export default function Relatorios({ semana, mes, origemAtual, funilPorOrigem, f
 
       <Bloco
         titulo="Mês"
-        periodoLabel={`${MES_LABEL[Number(mes.mesIso.slice(5, 7)) - 1]} de ${mes.mesIso.slice(0, 4)}`}
+        periodoLabel={mesLabel}
         metricas={mes.metricas}
         hrefAnterior={`/app/relatorios?semana=${semana.inicio}&mes=${mes.mesAnteriorIso}${origemAtual ? `&origem=${origemAtual}` : ''}`}
         hrefAtual={`/app/relatorios${origemAtual ? `?origem=${origemAtual}` : ''}`}
@@ -227,7 +339,7 @@ export default function Relatorios({ semana, mes, origemAtual, funilPorOrigem, f
         <div>
           <h2>Funil de captação</h2>
           <p>
-            {MES_LABEL[Number(mes.mesIso.slice(5, 7)) - 1]} de {mes.mesIso.slice(0, 4)}
+            {mesLabel}
             {origemAtual ? ` — ${ORIGEM_LABEL[origemAtual]}` : ' — todas as origens'}
           </p>
         </div>
@@ -238,12 +350,61 @@ export default function Relatorios({ semana, mes, origemAtual, funilPorOrigem, f
         <div>
           <h2>Desempenho por origem de captação</h2>
           <p>
-            {MES_LABEL[Number(mes.mesIso.slice(5, 7)) - 1]} de {mes.mesIso.slice(0, 4)} — leads e candidaturas contados por quando entraram no
-            painel; entrevistados e aprovados, pela data da entrevista; contratados e descartados, por quando o status mudou.
+            {mesLabel} — {LEGENDA_PERIODO}
           </p>
         </div>
       </div>
-      <TabelaPorOrigem linhas={funilPorOrigem} total={funilTotal} origemAtual={origemAtual} />
+      <TabelaAgrupada
+        colunaChave="Origem"
+        linhas={funilPorOrigem}
+        total={funilTotal}
+        resolverLabel={(chave) => ORIGEM_LABEL[chave] || chave}
+        chaveAtual={origemAtual}
+        labelVazio="Nenhum movimento em nenhuma origem nesse mês."
+      />
+
+      <div className="section-head">
+        <div>
+          <h2>Desempenho por vaga</h2>
+          <p>
+            {mesLabel} — {LEGENDA_PERIODO}
+          </p>
+        </div>
+      </div>
+      <TabelaAgrupada
+        colunaChave="Vaga"
+        linhas={funilPorVaga}
+        total={funilTotalVaga}
+        resolverLabel={(chave) => (chave === null ? 'Sem vaga definida' : vagasPorId[chave]?.titulo || 'Vaga removida')}
+        labelVazio="Nenhum movimento em nenhuma vaga nesse mês."
+      />
+
+      <div className="section-head">
+        <div>
+          <h2>Desempenho por equipe</h2>
+          <p>
+            {mesLabel} — agrupado pelo gerente comercial responsável pela vaga. {LEGENDA_PERIODO}
+          </p>
+        </div>
+      </div>
+      <TabelaAgrupada
+        colunaChave="Equipe (gerente responsável)"
+        linhas={funilPorEquipe}
+        total={funilTotalEquipe}
+        resolverLabel={(chave) => (chave === null ? 'Sem equipe definida' : pessoasPorId[chave]?.nome || 'Gerente removido')}
+        labelVazio="Nenhum movimento em nenhuma equipe nesse mês."
+      />
+
+      <div className="section-head">
+        <div>
+          <h2>Turnover da equipe</h2>
+          <p>
+            {mesLabel} — desligamentos contados pela data do desligamento. "Equipe de referência" é quem está ativo hoje somado a quem foi
+            desligado nesse mês, como aproximação de quantos estariam ativos sem esses desligamentos.
+          </p>
+        </div>
+      </div>
+      <Turnover turnover={turnover} />
     </Layout>
   );
 }
@@ -252,7 +413,13 @@ export async function getServerSideProps(context) {
   const redirect = requireAuth(context);
   if (redirect) return redirect;
 
-  const [entrevistas, candidatos, leads] = await Promise.all([getEntrevistasAgendadas(), getCandidatosComEntrevista(), getLeads()]);
+  const [entrevistas, candidatos, leads, vagas, pessoas] = await Promise.all([
+    getEntrevistasAgendadas(),
+    getCandidatosComEntrevista(),
+    getLeads(),
+    getVagas(),
+    getPessoas(),
+  ]);
 
   const hoje = agoraSaoPaulo();
   const hojeIso = hoje.toISOString().slice(0, 10);
@@ -271,8 +438,51 @@ export async function getServerSideProps(context) {
   const mesFim = fimDoMes(mesIso);
   const metricasMes = calcularMetricas({ entrevistas, candidatos, inicio: mesInicio, fim: mesFim, hojeIso, origem: origemAtual });
 
-  const funil = calcularFunilOrigem({ leads, candidatos, inicio: mesInicio, fim: mesFim });
-  const funilFiltrado = origemAtual ? funil.porCodigo[origemAtual] : funil.total;
+  // Por origem — chaves fixas (ORIGEM_ORDEM), toda lead/candidato sempre tem uma.
+  const funilOrigem = calcularFunilAgrupado({
+    leads,
+    candidatos,
+    inicio: mesInicio,
+    fim: mesFim,
+    chaves: ORIGEM_ORDEM,
+    extrairChave: (item) => item.origem || null,
+  });
+  const funilFiltrado = origemAtual ? funilOrigem.porCodigo.get(origemAtual) : funilOrigem.total;
+
+  // Por vaga — inclui `null` pra pegar quem ainda não tem vaga definida (ex.: candidatura geral),
+  // senão esses registros somem da tabela sem aparecer nem na soma dela.
+  const vagasOrdenadas = [...vagas].sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'));
+  const vagaIdsConhecidos = new Set(vagas.map((v) => v.id));
+  const funilVaga = calcularFunilAgrupado({
+    leads,
+    candidatos,
+    inicio: mesInicio,
+    fim: mesFim,
+    chaves: [...vagasOrdenadas.map((v) => v.id), null],
+    // Normaliza pra null também quando o vaga_id aponta pra uma vaga que não existe mais —
+    // sem isso, esse registro ficaria de fora de toda a tabela (e o total dela não bateria
+    // com o total geral) em vez de cair em "Sem vaga definida".
+    extrairChave: (item) => (item.vaga_id && vagaIdsConhecidos.has(item.vaga_id) ? item.vaga_id : null),
+  });
+  const vagasPorId = Object.fromEntries(vagas.map((v) => [v.id, v]));
+
+  // Por equipe — "equipe" aqui é o gerente comercial responsável pela vaga (cadastro em
+  // Vagas > Gerente comercial responsável), não a equipe formada depois da contratação (essa só
+  // existe pra quem já foi contratado). Leads/candidatos de uma vaga sem gerente definido, ou
+  // sem vaga nenhuma, caem no mesmo "Sem equipe definida".
+  const gerentesOrdenados = pessoas.filter((p) => p.papel === 'gerente_comercial').sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const vagaParaGerenteId = Object.fromEntries(vagas.map((v) => [v.id, v.gerente_id || null]));
+  const funilEquipe = calcularFunilAgrupado({
+    leads,
+    candidatos,
+    inicio: mesInicio,
+    fim: mesFim,
+    chaves: [...gerentesOrdenados.map((p) => p.id), null],
+    extrairChave: (item) => (item.vaga_id ? vagaParaGerenteId[item.vaga_id] ?? null : null),
+  });
+  const pessoasPorId = Object.fromEntries(pessoas.map((p) => [p.id, p]));
+
+  const turnover = calcularTurnover({ pessoas, inicio: mesInicio, fim: mesFim });
 
   const geradoEm = `${String(hoje.getUTCDate()).padStart(2, '0')}/${String(hoje.getUTCMonth() + 1).padStart(2, '0')}/${hoje.getUTCFullYear()} às ${String(hoje.getUTCHours()).padStart(2, '0')}:${String(hoje.getUTCMinutes()).padStart(2, '0')}`;
 
@@ -292,9 +502,16 @@ export async function getServerSideProps(context) {
         mesSeguinteIso: mesSeguinte(mesIso),
       },
       origemAtual,
-      funilPorOrigem: funil.porOrigem,
-      funilTotal: funil.total,
+      funilPorOrigem: funilOrigem.porChave,
+      funilTotal: funilOrigem.total,
       funilFiltrado,
+      funilPorVaga: funilVaga.porChave,
+      funilTotalVaga: funilVaga.total,
+      vagasPorId,
+      funilPorEquipe: funilEquipe.porChave,
+      funilTotalEquipe: funilEquipe.total,
+      pessoasPorId,
+      turnover,
       geradoEm,
     },
   };
