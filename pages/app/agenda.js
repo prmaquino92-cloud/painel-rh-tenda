@@ -1,10 +1,36 @@
 import { useState } from 'react';
+import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
 import { getEntrevistasAgendadas, getBloqueios, getPessoas, getUnidades } from '../../lib/data';
 import { getGoogleStatus } from '../../lib/google';
 import { DIA_SEMANA_LABEL, FEEDBACK_DECISAO, fmtData } from '../../lib/domain';
 import { Icon } from '../../components/icons';
+
+// Envia um dos formulários de ação da Agenda (Cancelar, Descartar, Marcar como realizada,
+// Não compareceu, Reagendar, Bloquear horário etc.) via fetch em vez de deixar o navegador
+// fazer um POST nativo. Um POST nativo faz o navegador recarregar a página inteira a partir do
+// topo — com a agenda cheia de entrevistas, isso te jogava de volta pro início toda vez que
+// você clicava numa ação lá embaixo. Com fetch + "soft refresh" do Next (router.replace com
+// scroll:false), só os dados são atualizados; a posição de rolagem fica onde você estava.
+async function enviarAcaoAgenda(ev, router, { confirmMsg, onDone } = {}) {
+  ev.preventDefault();
+  if (confirmMsg && !window.confirm(confirmMsg)) return;
+  const form = ev.target;
+  const body = new URLSearchParams();
+  new FormData(form).forEach((v, k) => body.append(k, v));
+  let erro = false;
+  try {
+    const r = await fetch(form.action, { method: 'POST', body });
+    // os endpoints redirecionam pra /app/agenda (sucesso) ou /app/agenda?erro=1 (falha) — o
+    // fetch segue o redirect sozinho, então o jeito de distinguir é olhar a URL final.
+    erro = !r.ok || /[?&]erro=1(&|$)/.test(r.url);
+  } catch {
+    erro = true;
+  }
+  if (onDone) onDone(erro);
+  router.replace(erro ? '/app/agenda?erro=1' : '/app/agenda', undefined, { scroll: false });
+}
 
 // Já vem com a mensagem de confirmação pronta (nome do candidato incluso), pra abrir o
 // WhatsApp direto na conversa com o texto só esperando o "Enviar".
@@ -37,10 +63,16 @@ function isProximos7(iso) {
 // Formulário inline pra reagendar — troca a data/horário da entrevista (e move o evento no
 // Google Agenda, se houver, mantendo o mesmo link de Meet).
 function ReagendarForm({ entrevista, onCancel }) {
+  const router = useRouter();
   return (
     <tr>
       <td colSpan={8} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
-        <form method="POST" action={`/api/entrevistas/${entrevista.id}/reagendar`} style={{ padding: '14px 16px' }}>
+        <form
+          method="POST"
+          action={`/api/entrevistas/${entrevista.id}/reagendar`}
+          style={{ padding: '14px 16px' }}
+          onSubmit={(ev) => enviarAcaoAgenda(ev, router, { onDone: (erro) => !erro && onCancel() })}
+        >
           <div className="field-row">
             <div className="field">
               <label>Nova data</label>
@@ -73,6 +105,7 @@ function ReagendarForm({ entrevista, onCancel }) {
 // Tabela de entrevistas reaproveitada pelas três caixinhas (futuras, realizadas,
 // não compareceu/canceladas) — mesma renderização de linha em todo lugar, só muda a lista.
 function TabelaEntrevistas({ entrevistas, reagendandoId, setReagendandoId, pessoaById, unidadeById, mensagemVazia }) {
+  const router = useRouter();
   return (
     <div className="table-wrap">
       <table>
@@ -199,15 +232,12 @@ function TabelaEntrevistas({ entrevistas, reagendandoId, setReagendandoId, pesso
                         <form
                           method="POST"
                           action={`/api/entrevistas/${e.id}/descartar`}
-                          onSubmit={(ev) => {
-                            if (
-                              !window.confirm(
-                                'Descartar esse candidato? A entrevista fica cancelada e o candidato é marcado como reprovado/declinado.'
-                              )
-                            ) {
-                              ev.preventDefault();
-                            }
-                          }}
+                          onSubmit={(ev) =>
+                            enviarAcaoAgenda(ev, router, {
+                              confirmMsg:
+                                'Descartar esse candidato? A entrevista fica cancelada e o candidato é marcado como reprovado/declinado.',
+                            })
+                          }
                         >
                           <button className="btn btn-ghost btn-sm" type="submit" style={{ color: 'var(--danger)' }}>
                             Descartar
@@ -217,7 +247,11 @@ function TabelaEntrevistas({ entrevistas, reagendandoId, setReagendandoId, pesso
                     </div>
                   ) : (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <form method="POST" action={`/api/entrevistas/${e.id}/realizada`}>
+                      <form
+                        method="POST"
+                        action={`/api/entrevistas/${e.id}/realizada`}
+                        onSubmit={(ev) => enviarAcaoAgenda(ev, router)}
+                      >
                         <button className="btn btn-ghost btn-sm" type="submit">
                           Marcar como realizada
                         </button>
@@ -228,15 +262,12 @@ function TabelaEntrevistas({ entrevistas, reagendandoId, setReagendandoId, pesso
                       <form
                         method="POST"
                         action={`/api/entrevistas/${e.id}/nao-compareceu`}
-                        onSubmit={(ev) => {
-                          if (
-                            !window.confirm(
-                              'Marcar como "não compareceu"? O candidato recebe um e-mail avisando que perdeu o horário, com um link para ele mesmo remarcar.'
-                            )
-                          ) {
-                            ev.preventDefault();
-                          }
-                        }}
+                        onSubmit={(ev) =>
+                          enviarAcaoAgenda(ev, router, {
+                            confirmMsg:
+                              'Marcar como "não compareceu"? O candidato recebe um e-mail avisando que perdeu o horário, com um link para ele mesmo remarcar.',
+                          })
+                        }
                       >
                         <button className="btn btn-ghost btn-sm" type="submit">
                           Não compareceu
@@ -245,11 +276,11 @@ function TabelaEntrevistas({ entrevistas, reagendandoId, setReagendandoId, pesso
                       <form
                         method="POST"
                         action={`/api/entrevistas/${e.id}/cancelar`}
-                        onSubmit={(ev) => {
-                          if (!window.confirm('Cancelar essa entrevista? Se houver evento na sua Google Agenda, ele também será removido.')) {
-                            ev.preventDefault();
-                          }
-                        }}
+                        onSubmit={(ev) =>
+                          enviarAcaoAgenda(ev, router, {
+                            confirmMsg: 'Cancelar essa entrevista? Se houver evento na sua Google Agenda, ele também será removido.',
+                          })
+                        }
                       >
                         <button className="btn btn-ghost btn-sm" type="submit" style={{ color: 'var(--danger)' }}>
                           Cancelar
@@ -314,6 +345,7 @@ function CaixinhaRecolhivel({ titulo, entrevistas, aberto, onToggle, reagendando
 }
 
 export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoas, unidades, erro }) {
+  const router = useRouter();
   const [showForm, setShowForm] = useState(false);
   const [tipo, setTipo] = useState('pontual');
   const [showRealizadas, setShowRealizadas] = useState(false);
@@ -426,7 +458,12 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
 
         {showForm ? (
           <div className="card-pad" style={{ paddingTop: 0 }}>
-            <form method="POST" action="/api/bloqueios" style={{ maxWidth: 420 }}>
+            <form
+              method="POST"
+              action="/api/bloqueios"
+              style={{ maxWidth: 420 }}
+              onSubmit={(ev) => enviarAcaoAgenda(ev, router, { onDone: (erro) => !erro && setShowForm(false) })}
+            >
               <div className="field">
                 <label>Tipo de bloqueio</label>
                 <select name="tipo" value={tipo} onChange={(e) => setTipo(e.target.value)}>
@@ -491,7 +528,7 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
                   </td>
                   <td className="row-sub">{b.motivo || '—'}</td>
                   <td>
-                    <form method="POST" action={`/api/bloqueios/${b.id}/delete`}>
+                    <form method="POST" action={`/api/bloqueios/${b.id}/delete`} onSubmit={(ev) => enviarAcaoAgenda(ev, router)}>
                       <button className="btn btn-ghost btn-sm" type="submit">
                         Remover
                       </button>
