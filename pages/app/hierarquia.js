@@ -196,9 +196,13 @@ export default function Hierarquia({ pessoas, unidades, erro }) {
   const convitePendente = pessoas.filter((p) => p.status === 'convite_pendente');
   const desligados = pessoas.filter((p) => p.status === 'desligado');
 
+  // Os ids das abas ("ativos"/"desligados") usam o plural pra ficar natural no rótulo, mas o
+  // valor de pessoas.status é singular ("ativo"/"desligado") — sem esse mapeamento a lista
+  // filtrava por um valor que nunca bate e sempre mostrava "Nenhuma pessoa encontrada".
+  const STATUS_DA_ABA = { ativos: 'ativo', desligados: 'desligado' };
   const naAba = pessoas.filter((p) => {
     if (aba === 'todos') return true;
-    return p.status === aba;
+    return p.status === (STATUS_DA_ABA[aba] || aba);
   });
 
   const filtradas = naAba.filter((p) => {
