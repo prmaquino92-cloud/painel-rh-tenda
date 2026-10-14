@@ -29,6 +29,23 @@ const MENSAGEM_ABORDAGEM_POR_ORIGEM = {
   },
 };
 
+// Vagas com uma mensagem de abordagem própria (pedido pelo Pedro), com prioridade sobre a
+// mensagem por origem acima — usada quando o lead já tem essa vaga definida (vaga_id), não
+// importa a origem. A função recebe o primeiro nome do lead e a URL base do painel (pra montar
+// o link de candidatura dessa vaga específica) e devolve a mensagem já pronta.
+const MENSAGEM_ABORDAGEM_POR_VAGA = {
+  '0cbd676a-f3a4-41c7-a617-d88903a0a1ba': (primeiroNome, baseUrl) => {
+    const saudacao = primeiroNome ? `Olá, ${primeiroNome}! Tudo bem? 😊` : 'Olá! Tudo bem? 😊';
+    return `${saudacao}
+Aqui é do RH da Construtora Tenda. Recebemos sua candidatura pelo InfoJobs para a vaga de Gestor(a) de Produto Imobiliário em Gravataí/RS e gostamos do seu perfil!
+Nessa função, você vai acompanhar a operação comercial de um empreendimento e dar suporte aos corretores nos atendimentos, negociações, simulações e fechamentos.
+💰 Comissões pagas em até 10 dias.
+Para seguir no processo, preencha o formulário e escolha o melhor horário para sua entrevista com o RH:
+👉 ${baseUrl}/p/candidatura/0cbd676a-f3a4-41c7-a617-d88903a0a1ba
+Leva só alguns minutos. Qualquer dúvida, é só me chamar por aqui!`;
+  },
+};
+
 // Origens com um card de divulgação (imagem) próprio, pra anexar junto da mensagem de
 // abordagem. O link do WhatsApp só consegue preencher texto — não anexa imagem sozinho — então
 // o botão de chamar no WhatsApp, pra essas origens, primeiro tenta copiar a imagem pra área de
@@ -59,15 +76,18 @@ async function copiarCardParaClipboard(urlCard) {
 // Monta o link "clique para conversar" a partir do telefone cadastrado — assume DDD + número
 // brasileiro e completa com o código do país (55) quando ainda não vem incluso. Já vem com a
 // mensagem de abordagem pronta (nome do lead incluso), pra abrir o WhatsApp direto na
-// conversa com o texto só esperando o "Enviar". A mensagem muda conforme a origem do lead,
-// quando essa origem tem um texto próprio configurado acima.
-function linkWhatsapp(telefone, nome, origem) {
+// conversa com o texto só esperando o "Enviar". A mensagem muda conforme a vaga do lead
+// (prioridade, quando configurada acima) ou, na falta disso, conforme a origem do lead.
+function linkWhatsapp(telefone, nome, origem, vagaId, baseUrl) {
   if (!telefone) return null;
   const digitos = telefone.replace(/\D/g, '');
   if (!digitos) return null;
   const comCodigoPais = digitos.startsWith('55') ? digitos : `55${digitos}`;
   const primeiroNome = (nome || '').trim().split(/\s+/)[0] || '';
-  const mensagem = (MENSAGEM_ABORDAGEM_POR_ORIGEM[origem] || mensagemAbordagemPadrao)(primeiroNome);
+  const mensagemPorVaga = vagaId && MENSAGEM_ABORDAGEM_POR_VAGA[vagaId];
+  const mensagem = mensagemPorVaga
+    ? mensagemPorVaga(primeiroNome, baseUrl)
+    : (MENSAGEM_ABORDAGEM_POR_ORIGEM[origem] || mensagemAbordagemPadrao)(primeiroNome);
   return `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
 }
 
@@ -1469,7 +1489,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                             <span>{l.telefone}</span>
                             <a
-                              href={linkWhatsapp(l.telefone, l.nome, l.origem)}
+                              href={linkWhatsapp(l.telefone, l.nome, l.origem, l.vaga_id, baseUrl)}
                               target="_blank"
                               rel="noreferrer"
                               title={
