@@ -153,6 +153,112 @@ function VagaForm(props) {
   );
 }
 
+// Conserto único: antes de /api/entrevistas/[id]/realizada.js ser corrigido, marcar a 1ª
+// entrevista como "realizada" na Agenda não avançava o status do candidato — ele ficava preso
+// em "Entrevista agendada" mesmo já tendo sido entrevistado, o que fazia a Agenda e o
+// Candidatos mostrarem informações desencontradas pro mesmo candidato. Essa ferramenta varre
+// quem já ficou preso assim e corrige de uma vez; daqui pra frente isso não acontece mais.
+function CorrigirStatusRealizada() {
+  const [checando, setChecando] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  async function checar() {
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const r = await fetch('/api/candidatos/corrigir-status-realizada', { method: 'GET' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível verificar os candidatos.');
+      } else {
+        setRelatorio(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function aplicar() {
+    if (!relatorio) return;
+    const ok = window.confirm(
+      `Isso vai mover ${relatorio.totalParaCorrigir} candidato(s) de "Entrevista agendada" pra "Entrevistado", porque a 1ª entrevista deles já consta como realizada. Confirma?`
+    );
+    if (!ok) return;
+    setAplicando(true);
+    setErro('');
+    try {
+      const r = await fetch('/api/candidatos/corrigir-status-realizada', { method: 'POST' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível corrigir os candidatos.');
+      } else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Verifica candidatos presos em "Entrevista agendada" cuja 1ª entrevista já está marcada como "Realizada" na Agenda — um
+          descompasso que só acontecia antes desse conserto. Move esses candidatos pra "Entrevistado", de onde dá pra registrar a
+          avaliação normalmente.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-outline btn-sm" type="button" onClick={checar} disabled={checando || aplicando}>
+            {checando ? 'Verificando...' : 'Verificar candidatos presos'}
+          </button>
+          {relatorio && relatorio.totalParaCorrigir > 0 ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={aplicar} disabled={aplicando}>
+              {aplicando ? 'Corrigindo...' : `Corrigir ${relatorio.totalParaCorrigir} candidato(s)`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              {relatorio.totalParaCorrigir} de {relatorio.totalCandidatos} candidato(s) estão presos em "Entrevista agendada" com a 1ª
+              entrevista já realizada.
+            </div>
+            {relatorio.totalParaCorrigir > 0 ? (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer' }}>Ver quem vai mudar ({relatorio.amostra.length} de {relatorio.totalParaCorrigir})</summary>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                  {relatorio.amostra.map((a) => (
+                    <li key={a.candidatoId}>
+                      "{a.nome}" — entrevista em {fmtData(a.entrevistaData)} · {a.entrevistaHora?.slice(0, 5)}.
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.candidatosCorrigidos} candidato(s) movido(s) pra "Entrevistado". Recarregue a página pra ver os números
+            atualizados.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseUrl, erro }) {
   const [busca, setBusca] = useState('');
   const [fVaga, setFVaga] = useState('');
@@ -161,6 +267,7 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
   const [avaliarId, setAvaliarId] = useState(null);
   const [vagaFormId, setVagaFormId] = useState(null);
   const [showManual, setShowManual] = useState(false);
+  const [showCorrigirRealizada, setShowCorrigirRealizada] = useState(false);
   const [soSemRetorno, setSoSemRetorno] = useState(false);
   const [abaCandidatos, setAbaCandidatos] = useState('todos');
   // Qual link de avaliação (feedback do gerente) foi copiado por último, só pra mostrar "copiado!"
@@ -242,9 +349,14 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
           Pipeline único, alimentado pelo formulário público de candidatura de cada vaga — e também pelo cadastro manual, pra quem você já
           contatou e agendou fora do painel.
         </p>
-        <button className="btn btn-primary" onClick={() => setShowManual((v) => !v)}>
-          {Icon.plus({ className: 'ic' })} Adicionar candidato
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-outline" onClick={() => setShowCorrigirRealizada((v) => !v)}>
+            {Icon.plus({ className: 'ic' })} Corrigir status presos
+          </button>
+          <button className="btn btn-primary" onClick={() => setShowManual((v) => !v)}>
+            {Icon.plus({ className: 'ic' })} Adicionar candidato
+          </button>
+        </div>
       </div>
       {erro ? (
         <div className="note" style={{ marginTop: 12 }}>
@@ -268,6 +380,7 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
           </div>
         </div>
       ) : null}
+      {showCorrigirRealizada ? <CorrigirStatusRealizada /> : null}
       {showManual ? <CadastroManualForm vagas={vagas} onCancel={() => setShowManual(false)} /> : null}
       <div className="tabs" style={{ marginTop: 16, flexWrap: 'wrap' }}>
         <button
