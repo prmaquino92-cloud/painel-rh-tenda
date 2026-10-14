@@ -195,20 +195,34 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
   );
   const idsSemRetorno = new Set(semRetornoGerente.map((c) => c.id));
 
-  // Candidatos com a 1ª entrevista cancelada ou "não compareceu" e ainda sem parecer — precisam
-  // de uma ação (reagendar ou descartar lá na Agenda) antes de seguirem no fluxo. Mesma condição
-  // usada na coluna "Avaliação e próxima etapa" de cada linha. Saem da aba "Todos" pra não
-  // poluir o pipeline normal e ficam reunidos numa aba própria, só com quem está preso nesse
-  // estado — assim que você reagenda ou descarta, o candidato sai daqui sozinho.
-  const aguardandoAvaliacao = candidatos.filter(
-    (c) => Boolean(c.entrevista) && !c.parecer && (c.entrevista.status === 'cancelada' || c.entrevista.status === 'nao_compareceu')
-  );
-  const idsAguardandoAvaliacao = new Set(aguardandoAvaliacao.map((c) => c.id));
+  // Candidatos com uma entrevista (1ª OU 2ª rodada) cancelada ou "não compareceu" e que ainda
+  // não foram resolvidos — precisam de uma ação (reagendar ou descartar lá na Agenda) antes de
+  // seguirem no fluxo. Sinalizar isso na Agenda não resolve o candidato sozinho: a 1ª rodada só
+  // conta enquanto não tem parecer (senão o candidato já foi avaliado); a 2ª rodada conta
+  // enquanto o status ainda é "2ª entrevista agendada" (senão já foi decidido por aqui). Saem
+  // da aba "Todos" pra não poluir o pipeline normal e ficam reunidos numa aba própria — assim
+  // que você reagenda ou descarta, o candidato sai daqui sozinho.
+  function entrevistaPendenteDeAcao(e) {
+    return Boolean(e) && (e.status === 'cancelada' || e.status === 'nao_compareceu');
+  }
+  const naoCompareceuCancelou = candidatos.filter((c) => {
+    const rodada1 = entrevistaPendenteDeAcao(c.entrevista) && !c.parecer;
+    const rodada2 = c.status === 'segunda_entrevista_agendada' && entrevistaPendenteDeAcao(c.entrevistaRodada2);
+    return rodada1 || rodada2;
+  });
+  const idsNaoCompareceuCancelou = new Set(naoCompareceuCancelou.map((c) => c.id));
+
+  // Candidatos já reprovados/declinados — reunidos numa aba própria pelo mesmo motivo: não
+  // precisam mais de nenhuma ação, só ficam atrapalhando quem você ainda está conduzindo.
+  const declinados = candidatos.filter((c) => c.status === 'declinado');
+  const idsDeclinados = new Set(declinados.map((c) => c.id));
 
   const filtrados = candidatos.filter((c) => {
-    if (abaCandidatos === 'aguardando_avaliacao') {
-      if (!idsAguardandoAvaliacao.has(c.id)) return false;
-    } else if (idsAguardandoAvaliacao.has(c.id)) {
+    if (abaCandidatos === 'nao_compareceu_cancelou') {
+      if (!idsNaoCompareceuCancelou.has(c.id)) return false;
+    } else if (abaCandidatos === 'declinados') {
+      if (!idsDeclinados.has(c.id)) return false;
+    } else if (idsNaoCompareceuCancelou.has(c.id) || idsDeclinados.has(c.id)) {
       return false;
     }
     if (soSemRetorno && !idsSemRetorno.has(c.id)) return false;
@@ -263,10 +277,17 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
         </button>
         <button
           type="button"
-          className={`btn btn-sm ${abaCandidatos === 'aguardando_avaliacao' ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => setAbaCandidatos('aguardando_avaliacao')}
+          className={`btn btn-sm ${abaCandidatos === 'nao_compareceu_cancelou' ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => setAbaCandidatos('nao_compareceu_cancelou')}
         >
-          Aguardando avaliação ({aguardandoAvaliacao.length})
+          Não compareceu/Cancelou ({naoCompareceuCancelou.length})
+        </button>
+        <button
+          type="button"
+          className={`btn btn-sm ${abaCandidatos === 'declinados' ? 'btn-primary' : 'btn-ghost'}`}
+          onClick={() => setAbaCandidatos('declinados')}
+        >
+          Declinados/Reprovados ({declinados.length})
         </button>
       </div>
       <div className="card" style={{ marginTop: 16 }}>
@@ -302,8 +323,10 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
         <div className="table-wrap">
           {filtrados.length === 0 ? (
             <div className="empty">
-              {abaCandidatos === 'aguardando_avaliacao'
-                ? 'Nenhum candidato esperando reagendar ou descartar a 1ª entrevista — tudo em dia 🎉'
+              {abaCandidatos === 'nao_compareceu_cancelou'
+                ? 'Nenhum candidato esperando reagendar ou descartar uma entrevista — tudo em dia 🎉'
+                : abaCandidatos === 'declinados'
+                ? 'Nenhum candidato declinado/reprovado ainda.'
                 : 'Nenhum candidato encontrado neste filtro.'}
             </div>
           ) : (
@@ -346,6 +369,10 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
                     c.entrevistaRodada2?.status === 'realizada' &&
                     !c.entrevistaRodada2?.feedback_em &&
                     (c.status === 'aprovado' || c.status === 'declinado' || c.status === 'contratado');
+                  // Mesma lógica da 1ª rodada (entrevistaCancelada/entrevistaFaltou), só que pra 2ª
+                  // entrevista: cancelada ou "não compareceu" enquanto o candidato ainda está preso
+                  // em "2ª entrevista agendada" — precisa de reagendar ou descartar na Agenda.
+                  const rodada2PrecisaAcao = c.status === 'segunda_entrevista_agendada' && entrevistaPendenteDeAcao(c.entrevistaRodada2);
 
                   if (avaliarId === c.id) {
                     return (
@@ -430,7 +457,16 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
                               <div>
                                 2ª entrevista: {fmtData(c.entrevistaRodada2.data)} · {c.entrevistaRodada2.hora?.slice(0, 5)} com{' '}
                                 {pessoaById(c.entrevistaRodada2.gerente_id)?.nome || '—'} ({unidadeById(c.entrevistaRodada2.unidade_id)?.nome || '—'})
-                                {c.entrevistaRodada2.feedback_em ? (
+                                {rodada2PrecisaAcao ? (
+                                  <div className="row-sub" style={{ marginTop: 3, color: 'var(--danger)' }}>
+                                    {c.entrevistaRodada2.status === 'cancelada' ? 'Entrevista cancelada' : 'Não compareceu'} — reagende ou
+                                    descarte na{' '}
+                                    <Link href="/app/agenda" style={{ textDecoration: 'underline' }}>
+                                      Agenda
+                                    </Link>
+                                    .
+                                  </div>
+                                ) : c.entrevistaRodada2.feedback_em ? (
                                   <div style={{ marginTop: 4 }}>
                                     <span className={`pill ${FEEDBACK_DECISAO[c.entrevistaRodada2.feedback_decisao]?.cls || 'pill-muted'}`}>
                                       <span className="pill-dot" />
@@ -455,7 +491,7 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
                                 ) : (
                                   <div className="row-sub" style={{ marginTop: 3 }}>Aguardando feedback do gerente</div>
                                 )}
-                                {!c.entrevistaRodada2.feedback_em && c.entrevistaRodada2.feedback_token ? (
+                                {!rodada2PrecisaAcao && !c.entrevistaRodada2.feedback_em && c.entrevistaRodada2.feedback_token ? (
                                   <button
                                     type="button"
                                     className="btn btn-ghost btn-sm"
