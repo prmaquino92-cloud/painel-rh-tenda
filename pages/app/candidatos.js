@@ -155,7 +155,6 @@ function VagaForm(props) {
 
 export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseUrl, erro }) {
   const [busca, setBusca] = useState('');
-  const [fStatus, setFStatus] = useState('');
   const [fVaga, setFVaga] = useState('');
   const [fOrigem, setFOrigem] = useState('');
   const [equipeId, setEquipeId] = useState(null);
@@ -212,22 +211,25 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
   });
   const idsNaoCompareceuCancelou = new Set(naoCompareceuCancelou.map((c) => c.id));
 
-  // Candidatos já reprovados/declinados — reunidos numa aba própria pelo mesmo motivo: não
-  // precisam mais de nenhuma ação, só ficam atrapalhando quem você ainda está conduzindo.
-  const declinados = candidatos.filter((c) => c.status === 'declinado');
-  const idsDeclinados = new Set(declinados.map((c) => c.id));
+  // Cada etapa do funil (as mesmas opções que antes só existiam no filtro "Todas as etapas")
+  // agora também é uma aba própria — contagem já descontando quem está em "Não
+  // compareceu/Cancelou", pra não contar o mesmo candidato em dois lugares.
+  const porEtapa = {};
+  Object.keys(STATUS_CANDIDATO).forEach((k) => {
+    porEtapa[k] = candidatos.filter((c) => c.status === k && !idsNaoCompareceuCancelou.has(c.id));
+  });
 
   const filtrados = candidatos.filter((c) => {
     if (abaCandidatos === 'nao_compareceu_cancelou') {
       if (!idsNaoCompareceuCancelou.has(c.id)) return false;
-    } else if (abaCandidatos === 'declinados') {
-      if (!idsDeclinados.has(c.id)) return false;
-    } else if (idsNaoCompareceuCancelou.has(c.id) || idsDeclinados.has(c.id)) {
+    } else if (abaCandidatos !== 'todos') {
+      // abaCandidatos é uma chave de STATUS_CANDIDATO
+      if (c.status !== abaCandidatos || idsNaoCompareceuCancelou.has(c.id)) return false;
+    } else if (idsNaoCompareceuCancelou.has(c.id)) {
       return false;
     }
     if (soSemRetorno && !idsSemRetorno.has(c.id)) return false;
     if (busca && !(c.nome.toLowerCase().includes(busca.toLowerCase()) || (c.email || '').toLowerCase().includes(busca.toLowerCase()))) return false;
-    if (fStatus && c.status !== fStatus) return false;
     if (fVaga && c.vaga_id !== fVaga) return false;
     if (fOrigem && c.origem !== fOrigem) return false;
     return true;
@@ -282,26 +284,21 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
         >
           Não compareceu/Cancelou ({naoCompareceuCancelou.length})
         </button>
-        <button
-          type="button"
-          className={`btn btn-sm ${abaCandidatos === 'declinados' ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => setAbaCandidatos('declinados')}
-        >
-          Declinados/Reprovados ({declinados.length})
-        </button>
+        {Object.entries(STATUS_CANDIDATO).map(([k, v]) => (
+          <button
+            key={k}
+            type="button"
+            className={`btn btn-sm ${abaCandidatos === k ? 'btn-primary' : 'btn-ghost'}`}
+            onClick={() => setAbaCandidatos(k)}
+          >
+            {v.label} ({porEtapa[k].length})
+          </button>
+        ))}
       </div>
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-pad" style={{ paddingBottom: 0 }}>
           <div className="toolbar">
             <input className="input" placeholder="Buscar candidato" value={busca} onChange={(e) => setBusca(e.target.value)} style={{ flex: 1, minWidth: 210 }} />
-            <select className="input" value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
-              <option value="">Todas as etapas</option>
-              {Object.entries(STATUS_CANDIDATO).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v.label}
-                </option>
-              ))}
-            </select>
             <select className="input" value={fVaga} onChange={(e) => setFVaga(e.target.value)}>
               <option value="">Todas as vagas</option>
               {vagas.map((v) => (
@@ -325,8 +322,8 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
             <div className="empty">
               {abaCandidatos === 'nao_compareceu_cancelou'
                 ? 'Nenhum candidato esperando reagendar ou descartar uma entrevista — tudo em dia 🎉'
-                : abaCandidatos === 'declinados'
-                ? 'Nenhum candidato declinado/reprovado ainda.'
+                : abaCandidatos !== 'todos'
+                ? `Nenhum candidato em "${STATUS_CANDIDATO[abaCandidatos]?.label}" neste filtro.`
                 : 'Nenhum candidato encontrado neste filtro.'}
             </div>
           ) : (
