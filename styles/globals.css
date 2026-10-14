@@ -221,3 +221,15 @@ select,.input{background:var(--surface);border:1px solid var(--border);border-ra
 }
 .sidebar-scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:35;}
 .sidebar-scrim.open{display:block;}
+
+/* Impressão / "salvar como PDF": some a navegação do painel e mostra só o conteúdo da página,
+   mais um cabeçalho (.print-header) com a identificação do relatório que só aparece aqui. */
+.print-header{display:none;}
+@media print{
+  .sidebar,.topbar,.sidebar-scrim,.no-print{display:none !important;}
+  .main{margin:0;}
+  .content{padding:0;max-width:100%;}
+  body{background:#fff;}
+  .print-header{display:block;margin-bottom:18px;}
+  .card,.stat{box-shadow:none;border:1px solid #ccc;}
+}
