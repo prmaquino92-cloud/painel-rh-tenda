@@ -1136,6 +1136,22 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
     });
   }
 
+  // Clicar no WhatsApp já marca "em tratamento" automaticamente (função acima) — mas às vezes o
+  // número dá errado/indisponível lá e, ao voltar pro painel, o lead fica "em tratamento" sem
+  // ter rolado contato de verdade. Esse atalho fica do lado do ícone pra corrigir isso num clique
+  // só: declina o lead com o motivo já certo, sem precisar abrir o formulário completo de
+  // declínio. Não detecta automaticamente (o WhatsApp abre fora do painel, não tem como saber se
+  // deu certo) — é só pra ser rápido quando você perceber que não deu.
+  function marcarNumeroInvalido(lead) {
+    fetch(`/api/leads/${lead.id}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ status: 'declinado', observacao: 'Telefone ou e-mail inválido' }),
+    })
+      .then(() => router.replace(router.asPath, undefined, { scroll: false }))
+      .catch(() => {});
+  }
+
   const total = leads.length;
   const porStatus = { novo: 0, em_tratamento: 0, sem_contato: 0, declinado: 0, convertido: 0 };
   leads.forEach((l) => {
@@ -1502,6 +1518,19 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                             >
                               {Icon.whatsapp({ className: 'ic' })}
                             </a>
+                            {l.status !== 'declinado' && l.status !== 'convertido' ? (
+                              <button
+                                type="button"
+                                className="btn-link-sm"
+                                title="Marcar esse lead como declinado (telefone ou e-mail inválido) — use quando o número der errado/indisponível no WhatsApp"
+                                onClick={() => {
+                                  if (window.confirm(`Marcar "${l.nome}" como declinado por telefone/e-mail inválido?`)) marcarNumeroInvalido(l);
+                                }}
+                                style={{ fontSize: 11, color: 'var(--danger, #c0392b)', whiteSpace: 'nowrap', background: 'none', border: 'none', padding: 0, textDecoration: 'underline', cursor: 'pointer' }}
+                              >
+                                nº inválido?
+                              </button>
+                            ) : null}
                             {CARD_DIVULGACAO_POR_ORIGEM[l.origem] ? (
                               cardCopiadoStatus[l.id] === 'ok' ? (
                                 <span style={{ fontSize: 11, color: 'var(--success, #1a7f37)', whiteSpace: 'nowrap' }}>

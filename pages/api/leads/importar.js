@@ -2,7 +2,7 @@ import * as XLSX from 'xlsx';
 import { supabaseAdmin } from '../../../lib/supabase';
 import { isAuthenticated } from '../../../lib/auth';
 import { getVagas, getLeads } from '../../../lib/data';
-import { ORIGEM_LABEL, ORIGEM_ORDEM, STATUS_LEAD, STATUS_CANDIDATO } from '../../../lib/domain';
+import { ORIGEM_LABEL, ORIGEM_ORDEM, STATUS_LEAD, STATUS_CANDIDATO, limparLocalidade } from '../../../lib/domain';
 import { normalizarXlsxNamespacePrefixado } from '../../../lib/xlsxFix';
 
 // aceita tanto o valor interno ("pandape") quanto o rótulo em português ("Pandapé") na planilha
@@ -170,7 +170,9 @@ export default async function handler(req, res) {
     }
     const telefone = String(linha['Telefone'] ?? linha['telefone'] ?? '').trim() || null;
     const email = String(linha['E-mail'] ?? linha['Email'] ?? linha['email'] ?? '').trim() || null;
-    const localidade = String(linha['Localidade'] ?? linha['localidade'] ?? '').trim() || null;
+    // A planilha (sobretudo Pandapé) costuma trazer o endereço completo nessa coluna — fica só
+    // "Cidade - UF" quando reconhece o padrão, senão guarda como veio (ver lib/domain.js).
+    const localidade = limparLocalidade(String(linha['Localidade'] ?? linha['localidade'] ?? '').trim() || null);
     const vagaTitulo = String(linha['Vaga de interesse'] ?? linha['Vaga'] ?? linha['vaga'] ?? '').trim();
     const origemBruta = String(linha['Origem'] ?? linha['origem'] ?? '').trim();
     const dadosLinha = { telefone, email, localidade, vagaTitulo, origemBruta };
