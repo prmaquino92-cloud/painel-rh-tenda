@@ -40,15 +40,17 @@ export default async function handler(req, res) {
 
   const sb = supabaseAdmin();
   let atualizados = 0;
-  const LOTE = 500;
-  for (let i = 0; i < mudancas.length; i += LOTE) {
-    const lote = mudancas.slice(i, i + LOTE);
-    const { error } = await sb.from('leads').upsert(
-      lote.map((m) => ({ id: m.id, localidade: m.depois })),
-      { onConflict: 'id' }
-    );
-    if (error) {
-      res.status(500).json({ error: error.message, atualizadosAntesDoErro: atualizados });
+  // update() por id em vez de upsert(): upsert monta um INSERT ... ON CONFLICT por baixo, e o
+  // Postgres exige valor pras colunas NOT NULL (ex.: "nome") já na cláusula INSERT mesmo quando
+  // o resultado real é um UPDATE — só mandar {id, localidade} quebra com "null value in column
+  // nome". update() não tem esse problema, só mexe na coluna informada.
+  const CONCORRENCIA = 20;
+  for (let i = 0; i < mudancas.length; i += CONCORRENCIA) {
+    const lote = mudancas.slice(i, i + CONCORRENCIA);
+    const resultados = await Promise.all(lote.map((m) => sb.from('leads').update({ localidade: m.depois }).eq('id', m.id)));
+    const falhou = resultados.find((r) => r.error);
+    if (falhou) {
+      res.status(500).json({ error: falhou.error.message, atualizadosAntesDoErro: atualizados });
       return;
     }
     atualizados += lote.length;
