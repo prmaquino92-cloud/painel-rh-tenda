@@ -9,6 +9,7 @@ import {
   AvaliarForm as AvaliarFormFields,
   DefinirEquipeForm as DefinirEquipeFormFields,
   VagaForm as VagaFormFields,
+  ReagendarRodada2Form as ReagendarRodada2FormFields,
 } from '../../components/CandidatoForms';
 
 // Cadastro manual de candidato + 1ª entrevista — pra registrar rápido alguém que você já
@@ -128,6 +129,16 @@ function AvaliarForm(props) {
     <tr>
       <td colSpan={7} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
         <AvaliarFormFields {...props} />
+      </td>
+    </tr>
+  );
+}
+
+function ReagendarRodada2Form(props) {
+  return (
+    <tr>
+      <td colSpan={7} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+        <ReagendarRodada2FormFields {...props} />
       </td>
     </tr>
   );
@@ -266,6 +277,7 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
   const [equipeId, setEquipeId] = useState(null);
   const [avaliarId, setAvaliarId] = useState(null);
   const [vagaFormId, setVagaFormId] = useState(null);
+  const [reagendarRodada2Id, setReagendarRodada2Id] = useState(null);
   const [showManual, setShowManual] = useState(false);
   const [showCorrigirRealizada, setShowCorrigirRealizada] = useState(false);
   const [soSemRetorno, setSoSemRetorno] = useState(false);
@@ -511,6 +523,18 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
                   if (vagaFormId === c.id) {
                     return <VagaForm key={c.id} candidato={c} vagas={vagas} onCancel={() => setVagaFormId(null)} />;
                   }
+                  if (reagendarRodada2Id === c.id) {
+                    return (
+                      <ReagendarRodada2Form
+                        key={c.id}
+                        candidato={c}
+                        gerentes={gerentes}
+                        unidades={unidades}
+                        unidadeSugeridaId={vagaDaCandidatura?.unidade_id}
+                        onCancel={() => setReagendarRodada2Id(null)}
+                      />
+                    );
+                  }
                   return (
                     <tr key={c.id}>
                       <td>
@@ -653,9 +677,30 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
                                     </form>
                                   </div>
                                 ) : null}
+                                {c.status === 'declinado' ? (
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline btn-sm"
+                                    style={{ marginTop: 6 }}
+                                    onClick={() => setReagendarRodada2Id(c.id)}
+                                  >
+                                    Candidato retornou — marcar nova 2ª entrevista
+                                  </button>
+                                ) : null}
                               </div>
                             ) : c.status === 'declinado' ? (
-                              <div>Descartado após a 1ª entrevista.</div>
+                              <div>
+                                Descartado após a 1ª entrevista.
+                                <div style={{ marginTop: 6 }}>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline btn-sm"
+                                    onClick={() => setReagendarRodada2Id(c.id)}
+                                  >
+                                    Candidato retornou — marcar nova 2ª entrevista
+                                  </button>
+                                </div>
+                              </div>
                             ) : null}
                           </div>
                         ) : podeAvaliar ? (

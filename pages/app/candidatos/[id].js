@@ -4,12 +4,13 @@ import Layout from '../../../components/Layout';
 import { requireAuth } from '../../../lib/auth';
 import { getCandidato, getVaga, getVagas, getPessoas, getUnidades } from '../../../lib/data';
 import { STATUS_CANDIDATO, FEEDBACK_DECISAO, ORIGEM_LABEL, initials, fmtData } from '../../../lib/domain';
-import { AvaliarForm, DefinirEquipeForm, VagaForm } from '../../../components/CandidatoForms';
+import { AvaliarForm, DefinirEquipeForm, VagaForm, ReagendarRodada2Form } from '../../../components/CandidatoForms';
 
 export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unidades, pessoaCorretor, superior, erro }) {
   const [avaliando, setAvaliando] = useState(false);
   const [definindoEquipe, setDefinindoEquipe] = useState(false);
   const [definindoVaga, setDefinindoVaga] = useState(false);
+  const [reagendandoRodada2, setReagendandoRodada2] = useState(false);
 
   if (!candidato) {
     return (
@@ -262,6 +263,27 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unida
                   Candidato descartado após a 1ª entrevista.
                 </p>
               )}
+              {candidato.status === 'declinado' && !reagendandoRodada2 ? (
+                <button
+                  className="btn btn-outline btn-sm"
+                  type="button"
+                  style={{ marginTop: 12 }}
+                  onClick={() => setReagendandoRodada2(true)}
+                >
+                  Candidato retornou — marcar nova 2ª entrevista
+                </button>
+              ) : null}
+              {reagendandoRodada2 ? (
+                <div style={{ marginTop: 12, background: 'var(--surface-2, #f7f7fa)', borderRadius: 10 }}>
+                  <ReagendarRodada2Form
+                    candidato={candidato}
+                    gerentes={gerentes}
+                    unidades={unidades}
+                    unidadeSugeridaId={vaga?.unidade_id}
+                    onCancel={() => setReagendandoRodada2(false)}
+                  />
+                </div>
+              ) : null}
             </div>
           </div>
         </>

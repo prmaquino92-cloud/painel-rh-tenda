@@ -147,6 +147,70 @@ export function VagaForm({ candidato, vagas, onCancel }) {
   );
 }
 
+// Pra quando um candidato já descartado ("Reprovado/Declinado") volta a ter chance — ex.:
+// reapareceu e pediu uma nova conversa. Marca uma nova 2ª entrevista presencial com o gerente
+// (reabre o candidato, status volta pra "2ª entrevista agendada"); os campos já vêm preenchidos
+// com o gerente/unidade da 2ª entrevista anterior, caso tenha tido uma, pra só precisar trocar a
+// data/horário no caso mais comum (mesmo gerente, nova data).
+export function ReagendarRodada2Form({ candidato, gerentes, unidades, unidadeSugeridaId, onCancel }) {
+  return (
+    <form method="POST" action={`/api/candidatos/${candidato.id}/reagendar-rodada2`} style={{ padding: '14px 16px' }}>
+      <div className="hint" style={{ marginBottom: 10 }}>
+        Marca uma nova 2ª entrevista presencial e reabre o candidato. Só existe uma 2ª entrevista por candidato no painel — a
+        anterior (data/parecer do gerente) é substituída por essa nova.
+      </div>
+      <div className="field-row">
+        <div className="field">
+          <label>Gerente responsável</label>
+          <select name="gerente_id" defaultValue={candidato.entrevistaRodada2?.gerente_id || ''} required>
+            <option value="" disabled>
+              Selecione
+            </option>
+            {gerentes.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>Unidade</label>
+          <select name="unidade_id" defaultValue={candidato.entrevistaRodada2?.unidade_id || unidadeSugeridaId || ''} required>
+            <option value="" disabled>
+              Selecione
+            </option>
+            {unidades.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="field-row">
+        <div className="field">
+          <label>Data</label>
+          <input type="date" name="data" required />
+        </div>
+        <div className="field">
+          <label>Horário</label>
+          <input type="time" name="hora" required />
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+        <button className="btn btn-primary btn-sm" type="submit">
+          Marcar nova 2ª entrevista
+        </button>
+        {onCancel ? (
+          <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
+            Cancelar
+          </button>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
 // Formulário de confirmação de contratação / equipe. Mesma ideia: sem wrapper de tabela fixo.
 export function DefinirEquipeForm({ candidato, gerentes, unidades, unidadeSugeridaId, onCancel }) {
   return (
