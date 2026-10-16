@@ -1098,6 +1098,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const [abaLeads, setAbaLeads] = useState('novo');
   const [filtroOrigem, setFiltroOrigem] = useState('todas');
   const [filtroLocalidade, setFiltroLocalidade] = useState('todas');
+  const [filtroVaga, setFiltroVaga] = useState('todas');
   // Busca por telefone: digita qualquer trecho do número e encontra o lead direto, não importa
   // em qual aba (status) ele está hoje — pensado pra quando você já sabe o contato e só quer
   // declinar ou evoluir ele rápido, sem precisar adivinhar/ir clicando aba por aba. Enquanto tem
@@ -1178,8 +1179,20 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const localidadesDisponiveis = Array.from(new Set(leads.map((l) => l.localidade).filter(Boolean))).sort((a, b) =>
     a.localeCompare(b, 'pt-BR')
   );
+  // Igual à localidade: a lista de opções do filtro de vaga só mostra vagas que realmente têm
+  // algum lead vinculado (em vez de todas as vagas cadastradas), pra não poluir o menu com vagas
+  // sem nenhum lead. "(sem vaga)" fica como opção separada pra quem quer ver só os leads ainda
+  // sem vaga definida (ex.: os importados de planilha genérica).
+  const vagasComLeads = Array.from(new Set(leads.map((l) => l.vaga_id).filter(Boolean)));
+  const vagasDisponiveis = vagasComLeads
+    .map((id) => ({ id, titulo: vagaNome(id) }))
+    .sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'));
+  const temLeadsSemVaga = leads.some((l) => !l.vaga_id);
   const leadsFiltrados = leads.filter(
-    (l) => (filtroOrigem === 'todas' || l.origem === filtroOrigem) && (filtroLocalidade === 'todas' || l.localidade === filtroLocalidade)
+    (l) =>
+      (filtroOrigem === 'todas' || l.origem === filtroOrigem) &&
+      (filtroLocalidade === 'todas' || l.localidade === filtroLocalidade) &&
+      (filtroVaga === 'todas' || (filtroVaga === '__sem_vaga__' ? !l.vaga_id : l.vaga_id === filtroVaga))
   );
   // Contagem de cada aba já considera os filtros de origem/localidade ativos, pra não mostrar um
   // número que depois não bate com o que aparece na tabela. Não considera a busca por telefone —
@@ -1444,13 +1457,30 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             </option>
           ))}
         </select>
-        {filtroOrigem !== 'todas' || filtroLocalidade !== 'todas' || buscaTelefone ? (
+        <select
+          style={{ maxWidth: 240 }}
+          value={filtroVaga}
+          onChange={(e) => {
+            setFiltroVaga(e.target.value);
+            setPaginaLeads(1);
+          }}
+        >
+          <option value="todas">Todas as vagas</option>
+          {vagasDisponiveis.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.titulo}
+            </option>
+          ))}
+          {temLeadsSemVaga ? <option value="__sem_vaga__">(sem vaga)</option> : null}
+        </select>
+        {filtroOrigem !== 'todas' || filtroLocalidade !== 'todas' || filtroVaga !== 'todas' || buscaTelefone ? (
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => {
               setFiltroOrigem('todas');
               setFiltroLocalidade('todas');
+              setFiltroVaga('todas');
               setBuscaTelefone('');
               setPaginaLeads(1);
             }}
@@ -1488,7 +1518,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             <div className="empty">
               {emBuscaTelefone
                 ? 'Nenhum lead encontrado com esse telefone.'
-                : filtroOrigem !== 'todas' || filtroLocalidade !== 'todas'
+                : filtroOrigem !== 'todas' || filtroLocalidade !== 'todas' || filtroVaga !== 'todas'
                 ? 'Nenhum lead encontrado com esses filtros.'
                 : abaLeads === 'novo'
                 ? 'Nenhum lead sem tratar — tudo em dia 🎉'
