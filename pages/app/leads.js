@@ -1098,6 +1098,12 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const [abaLeads, setAbaLeads] = useState('novo');
   const [filtroOrigem, setFiltroOrigem] = useState('todas');
   const [filtroLocalidade, setFiltroLocalidade] = useState('todas');
+  // Busca por telefone: digita qualquer trecho do número e encontra o lead direto, não importa
+  // em qual aba (status) ele está hoje — pensado pra quando você já sabe o contato e só quer
+  // declinar ou evoluir ele rápido, sem precisar adivinhar/ir clicando aba por aba. Enquanto tem
+  // busca digitada, ela substitui a aba (mostra de todos os status juntos); a coluna "Status" na
+  // tabela já deixa claro onde cada resultado está.
+  const [buscaTelefone, setBuscaTelefone] = useState('');
   // A tabela de leads mostra só uma página por vez (em vez da aba inteira de uma vez) — com
   // milhares de leads em "Sem tratar", renderizar tudo junto deixava a página extremamente
   // pesada e travava o navegador. Volta pra página 1 sempre que a aba ou os filtros mudam, senão
@@ -1176,12 +1182,17 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
     (l) => (filtroOrigem === 'todas' || l.origem === filtroOrigem) && (filtroLocalidade === 'todas' || l.localidade === filtroLocalidade)
   );
   // Contagem de cada aba já considera os filtros de origem/localidade ativos, pra não mostrar um
-  // número que depois não bate com o que aparece na tabela.
+  // número que depois não bate com o que aparece na tabela. Não considera a busca por telefone —
+  // essas continuam mostrando o total de cada aba mesmo com uma busca em andamento.
   const porStatusFiltrado = { novo: 0, em_tratamento: 0, sem_contato: 0, declinado: 0, convertido: 0 };
   leadsFiltrados.forEach((l) => {
     porStatusFiltrado[l.status] = (porStatusFiltrado[l.status] || 0) + 1;
   });
-  const leadsExibidos = leadsFiltrados.filter((l) => l.status === abaLeads);
+  const buscaTelefoneDigitos = buscaTelefone.replace(/\D/g, '');
+  const emBuscaTelefone = buscaTelefoneDigitos.length > 0;
+  const leadsExibidos = emBuscaTelefone
+    ? leadsFiltrados.filter((l) => (l.telefone || '').replace(/\D/g, '').includes(buscaTelefoneDigitos))
+    : leadsFiltrados.filter((l) => l.status === abaLeads);
   const totalPaginasLeads = Math.max(1, Math.ceil(leadsExibidos.length / LEADS_POR_PAGINA));
   const paginaLeadsAtual = Math.min(paginaLeads, totalPaginasLeads);
   const leadsDaPagina = leadsExibidos.slice(
@@ -1392,6 +1403,17 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
         <p>Trate cada lead até declinar ou evoluir para candidatura</p>
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="Buscar por telefone..."
+          style={{ maxWidth: 220 }}
+          value={buscaTelefone}
+          onChange={(e) => {
+            setBuscaTelefone(e.target.value);
+            setPaginaLeads(1);
+          }}
+        />
         <select
           style={{ maxWidth: 220 }}
           value={filtroOrigem}
@@ -1422,13 +1444,14 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             </option>
           ))}
         </select>
-        {filtroOrigem !== 'todas' || filtroLocalidade !== 'todas' ? (
+        {filtroOrigem !== 'todas' || filtroLocalidade !== 'todas' || buscaTelefone ? (
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => {
               setFiltroOrigem('todas');
               setFiltroLocalidade('todas');
+              setBuscaTelefone('');
               setPaginaLeads(1);
             }}
           >
@@ -1436,28 +1459,36 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
           </button>
         ) : null}
       </div>
-      <div className="tabs" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
-        {ABAS_LEADS.map((aba) => (
-          <button
-            key={aba.status}
-            type="button"
-            className={`btn btn-sm ${abaLeads === aba.status ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => {
-              setAbaLeads(aba.status);
-              setPaginaLeads(1);
-            }}
-          >
-            {aba.label} ({porStatusFiltrado[aba.status] || 0})
-          </button>
-        ))}
-      </div>
+      {emBuscaTelefone ? (
+        <div className="hint" style={{ marginBottom: 12 }}>
+          Mostrando resultados da busca por telefone em todas as abas/status — apague o campo de busca pra voltar a navegar por aba.
+        </div>
+      ) : (
+        <div className="tabs" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
+          {ABAS_LEADS.map((aba) => (
+            <button
+              key={aba.status}
+              type="button"
+              className={`btn btn-sm ${abaLeads === aba.status ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => {
+                setAbaLeads(aba.status);
+                setPaginaLeads(1);
+              }}
+            >
+              {aba.label} ({porStatusFiltrado[aba.status] || 0})
+            </button>
+          ))}
+        </div>
+      )}
       <div className="card">
         <div className="table-wrap">
           {leads.length === 0 ? (
             <div className="empty">Nenhum lead cadastrado ainda.</div>
           ) : leadsExibidos.length === 0 ? (
             <div className="empty">
-              {filtroOrigem !== 'todas' || filtroLocalidade !== 'todas'
+              {emBuscaTelefone
+                ? 'Nenhum lead encontrado com esse telefone.'
+                : filtroOrigem !== 'todas' || filtroLocalidade !== 'todas'
                 ? 'Nenhum lead encontrado com esses filtros.'
                 : abaLeads === 'novo'
                 ? 'Nenhum lead sem tratar — tudo em dia 🎉'
@@ -1653,7 +1684,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
               ← Anterior
             </button>
             <span style={{ fontSize: 12.3, color: 'var(--ink-faint)' }}>
-              Página {paginaLeadsAtual} de {totalPaginasLeads} · {leadsExibidos.length} leads nessa aba
+              Página {paginaLeadsAtual} de {totalPaginasLeads} · {leadsExibidos.length} leads {emBuscaTelefone ? 'encontrados' : 'nessa aba'}
             </span>
             <button
               type="button"
