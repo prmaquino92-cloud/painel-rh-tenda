@@ -256,7 +256,7 @@ function PublicShell({ titulo, children }) {
   return (
     <>
       <Head>
-        <title>{titulo} · Tenda Vendas</title>
+        <title>{`${titulo} · Tenda Vendas`}</title>
       </Head>
       <div className="public-topbar">
         <div className="brand-mark" style={{ width: 28, height: 28, fontSize: 12 }}>
