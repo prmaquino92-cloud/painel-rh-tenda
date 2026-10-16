@@ -35,13 +35,18 @@ const MENSAGEM_ABORDAGEM_POR_ORIGEM = {
 // o link de candidatura dessa vaga específica) e devolve a mensagem já pronta.
 const MENSAGEM_ABORDAGEM_POR_VAGA = {
   '0cbd676a-f3a4-41c7-a617-d88903a0a1ba': (primeiroNome, baseUrl) => {
-    const saudacao = primeiroNome ? `Olá, ${primeiroNome}! Tudo bem? 😊` : 'Olá! Tudo bem? 😊';
+    const saudacao = primeiroNome ? `Olá, ${primeiroNome}! Tudo bem?` : 'Olá! Tudo bem?';
     return `${saudacao}
+
 Aqui é do RH da Construtora Tenda. Recebemos sua candidatura pelo InfoJobs para a vaga de Gestor(a) de Produto Imobiliário em Gravataí/RS e gostamos do seu perfil!
+
 Nessa função, você vai acompanhar a operação comercial de um empreendimento e dar suporte aos corretores nos atendimentos, negociações, simulações e fechamentos.
-💰 Comissões pagas em até 10 dias.
+
+- Comissões pagas em até 10 dias.
+
 Para seguir no processo, preencha o formulário e escolha o melhor horário para sua entrevista com o RH:
-👉 ${baseUrl}/p/candidatura/0cbd676a-f3a4-41c7-a617-d88903a0a1ba
+${baseUrl}/p/candidatura/0cbd676a-f3a4-41c7-a617-d88903a0a1ba
+
 Leva só alguns minutos. Qualquer dúvida, é só me chamar por aqui!`;
   },
 };
