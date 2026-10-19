@@ -3,8 +3,17 @@ import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
 import { getEntrevistasAgendadas, getBloqueios, getPessoas, getUnidades } from '../../lib/data';
-import { getGoogleStatus } from '../../lib/google';
-import { DIA_SEMANA_LABEL, FEEDBACK_DECISAO, fmtData } from '../../lib/domain';
+import { getGoogleStatus, getBusyIntervals } from '../../lib/google';
+import {
+  DIA_SEMANA_LABEL,
+  FEEDBACK_DECISAO,
+  fmtData,
+  diasUteisDisponiveis,
+  gerarHorarios,
+  isSlotBloqueado,
+  hhmmToMin,
+  agoraSaoPaulo,
+} from '../../lib/domain';
 import { Icon } from '../../components/icons';
 
 // Envia um dos formulários de ação da Agenda (Cancelar, Descartar, Marcar como realizada,
@@ -344,7 +353,7 @@ function CaixinhaRecolhivel({ titulo, entrevistas, aberto, onToggle, reagendando
   );
 }
 
-export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoas, unidades, erro }) {
+export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoas, unidades, horariosLivres, erro }) {
   const router = useRouter();
   const [showForm, setShowForm] = useState(false);
   const [tipo, setTipo] = useState('pontual');
@@ -374,6 +383,41 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
               já crie o evento com Google Meet automaticamente.
             </>
           )}
+        </div>
+      </div>
+
+      {/* Visão rápida de horários livres (hoje, amanhã e depois de amanhã) — janela comercial
+          padrão 09:00–17:30, cruzando com entrevistas já marcadas, bloqueios manuais e, se
+          conectado, a sua Google Agenda. Não depende de nenhuma vaga específica (cada vaga pode
+          ter uma janela diferente) — é só uma referência rápida pra responder "que horário você
+          tem livre" sem precisar abrir a Google Agenda. */}
+      <div className="card" style={{ marginBottom: 18 }}>
+        <div className="card-pad">
+          <div
+            style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-faint)', fontWeight: 700, marginBottom: 10 }}
+          >
+            Horários livres (09:00–17:30)
+          </div>
+          <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
+            {horariosLivres.map((d, i) => (
+              <div key={d.iso} style={{ minWidth: 170 }}>
+                <div style={{ fontSize: 12.8, fontWeight: 700, marginBottom: 6 }}>
+                  {i === 0 ? 'Hoje' : i === 1 ? 'Amanhã' : DIA_SEMANA_LABEL[d.weekday]} · {d.label}
+                </div>
+                {d.livres.length ? (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {d.livres.map((h) => (
+                      <span key={h} className="pill pill-info">
+                        {h}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="hint">Nenhum horário livre</div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -551,6 +595,55 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
   );
 }
 
+// Mesma lógica de disponibilidade de /api/public/slots.js (a que o candidato vê pra marcar a
+// entrevista), só que numa janela comercial padrão fixa (não depende de vaga nenhuma) e sempre
+// pros 3 dias corridos a partir de hoje — é uma referência rápida, não um link de agendamento.
+const JANELA_PADRAO_INICIO = '09:00';
+const JANELA_PADRAO_FIM = '17:30';
+const ANTECEDENCIA_MIN = 60; // mesmo valor usado em /api/public/slots.js
+
+async function calcularHorariosLivres(entrevistas, bloqueios, googleConectado) {
+  const horarios = gerarHorarios(JANELA_PADRAO_INICIO, JANELA_PADRAO_FIM);
+  const agora = agoraSaoPaulo();
+  const hojeIso = agora.toISOString().slice(0, 10);
+  const minutosAgora = agora.getUTCHours() * 60 + agora.getUTCMinutes();
+  // todos os dias da semana habilitados (sem filtrar por dia útil) — "hoje, amanhã e depois de
+  // amanhã" é literal, não "os 3 próximos dias úteis".
+  const dias = diasUteisDisponiveis([0, 1, 2, 3, 4, 5, 6], 3, undefined, true);
+
+  let busy = [];
+  if (googleConectado && dias.length) {
+    try {
+      const timeMin = new Date(`${dias[0].iso}T00:00:00-03:00`).toISOString();
+      const timeMax = new Date(`${dias[dias.length - 1].iso}T23:59:59-03:00`).toISOString();
+      busy = await getBusyIntervals(timeMin, timeMax);
+    } catch {
+      busy = [];
+    }
+  }
+  function ocupadoNoGoogle(iso, hora) {
+    const slotStart = new Date(`${iso}T${hora}:00-03:00`).getTime();
+    const slotEnd = slotStart + 30 * 60000;
+    return busy.some((bloco) => {
+      const bs = new Date(bloco.start).getTime();
+      const be = new Date(bloco.end).getTime();
+      return slotStart < be && slotEnd > bs;
+    });
+  }
+
+  return dias.map((d) => {
+    const horariosDoDia = d.iso === hojeIso ? horarios.filter((h) => hhmmToMin(h) >= minutosAgora + ANTECEDENCIA_MIN) : horarios;
+    const livres = horariosDoDia.filter((h) => {
+      const ocupado = entrevistas.some((e) => e.data === d.iso && e.hora?.slice(0, 5) === h);
+      if (ocupado) return false;
+      if (isSlotBloqueado(bloqueios, d.iso, h)) return false;
+      if (googleConectado && ocupadoNoGoogle(d.iso, h)) return false;
+      return true;
+    });
+    return { iso: d.iso, label: d.label, weekday: d.weekday, livres };
+  });
+}
+
 export async function getServerSideProps(context) {
   const redirect = requireAuth(context);
   if (redirect) return redirect;
@@ -561,7 +654,16 @@ export async function getServerSideProps(context) {
     getPessoas(),
     getUnidades(),
   ]);
+  const horariosLivres = await calcularHorariosLivres(entrevistas, bloqueios, google.conectado);
   return {
-    props: { entrevistas, bloqueios, googleConectado: google.conectado, pessoas, unidades, erro: context.query.erro === '1' },
+    props: {
+      entrevistas,
+      bloqueios,
+      googleConectado: google.conectado,
+      pessoas,
+      unidades,
+      horariosLivres,
+      erro: context.query.erro === '1',
+    },
   };
 }
