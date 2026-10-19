@@ -300,7 +300,12 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
   const vagaById = (id) => vagas.find((v) => v.id === id);
   const pessoaById = (id) => pessoas.find((p) => p.id === id);
   const unidadeById = (id) => unidades.find((u) => u.id === id);
-  const gerentes = pessoas.filter((p) => p.papel === 'gerente_comercial');
+  // Quem conduz a entrevista pode ser um gerente comercial ou um coordenador (mesmo critério da
+  // vaga — ver vagas.js) — coordenadores também entrevistam candidatos diretamente. Já a equipe
+  // de destino do candidato contratado (DefinirEquipeForm) continua só entre gerentes comerciais
+  // — é a equipe que o corretor integra no dia a dia, não quem conduziu a entrevista.
+  const gerentes = pessoas.filter((p) => p.papel === 'gerente_comercial' || p.papel === 'coordenador');
+  const gerentesComerciais = pessoas.filter((p) => p.papel === 'gerente_comercial');
 
   // Banco de candidatos "presos": já fizeram a 2ª entrevista, mas o gerente nunca deu retorno
   // pela plataforma. Sem isso, esses candidatos ficam parados pra sempre — o RH precisa poder
@@ -513,7 +518,7 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
                       <DefinirEquipeForm
                         key={c.id}
                         candidato={c}
-                        gerentes={gerentes}
+                        gerentes={gerentesComerciais}
                         unidades={unidades}
                         unidadeSugeridaId={pessoaCorretor?.unidade_id || vagaDaCandidatura?.unidade_id}
                         onCancel={() => setEquipeId(null)}

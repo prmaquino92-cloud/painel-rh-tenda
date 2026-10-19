@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { PAPEL_LABEL } from '../lib/domain';
 
 // Formulário de avaliação pós-1ª entrevista. Sem <tr>/<td> — quem chama decide o wrapper
 // (uma linha de tabela na lista de Candidatos, ou um card simples na ficha do candidato).
@@ -64,7 +65,7 @@ export function AvaliarForm({ candidato, gerentes, unidades, unidadeSugeridaId, 
                 </option>
                 {gerentes.map((g) => (
                   <option key={g.id} value={g.id}>
-                    {g.nome}
+                    {g.nome} — {PAPEL_LABEL[g.papel]}
                   </option>
                 ))}
               </select>
@@ -168,7 +169,7 @@ export function ReagendarRodada2Form({ candidato, gerentes, unidades, unidadeSug
             </option>
             {gerentes.map((g) => (
               <option key={g.id} value={g.id}>
-                {g.nome}
+                {g.nome} — {PAPEL_LABEL[g.papel]}
               </option>
             ))}
           </select>

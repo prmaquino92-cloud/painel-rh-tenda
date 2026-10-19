@@ -6,7 +6,7 @@ import { getCandidato, getVaga, getVagas, getPessoas, getUnidades } from '../../
 import { STATUS_CANDIDATO, FEEDBACK_DECISAO, ORIGEM_LABEL, initials, fmtData } from '../../../lib/domain';
 import { AvaliarForm, DefinirEquipeForm, VagaForm, ReagendarRodada2Form } from '../../../components/CandidatoForms';
 
-export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unidades, pessoaCorretor, superior, erro }) {
+export default function FichaCandidato({ candidato, vaga, vagas, gerentes, gerentesComerciais, unidades, pessoaCorretor, superior, erro }) {
   const [avaliando, setAvaliando] = useState(false);
   const [definindoEquipe, setDefinindoEquipe] = useState(false);
   const [definindoVaga, setDefinindoVaga] = useState(false);
@@ -345,7 +345,7 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, unida
             <div style={{ marginTop: 12, background: 'var(--surface-2, #f7f7fa)', borderRadius: 10 }}>
               <DefinirEquipeForm
                 candidato={candidato}
-                gerentes={gerentes}
+                gerentes={gerentesComerciais}
                 unidades={unidades}
                 unidadeSugeridaId={pessoaCorretor?.unidade_id || vaga?.unidade_id}
                 onCancel={() => setDefinindoEquipe(false)}
@@ -374,7 +374,11 @@ export async function getServerSideProps(context) {
     return { props: { candidato: null, erro: context.query.erro === '1' } };
   }
   const vaga = candidato.vaga_id ? await getVaga(candidato.vaga_id) : null;
-  const gerentes = pessoas.filter((p) => p.papel === 'gerente_comercial');
+  // Mesmo critério de candidatos.js: quem conduz a entrevista pode ser gerente comercial ou
+  // coordenador; a equipe de destino do contratado (DefinirEquipeForm) continua só gerentes
+  // comerciais.
+  const gerentes = pessoas.filter((p) => p.papel === 'gerente_comercial' || p.papel === 'coordenador');
+  const gerentesComerciais = pessoas.filter((p) => p.papel === 'gerente_comercial');
   const pessoaCorretor = candidato.pessoa_id ? pessoas.find((p) => p.id === candidato.pessoa_id) || null : null;
   const superior = pessoaCorretor?.superior_id ? pessoas.find((p) => p.id === pessoaCorretor.superior_id) || null : null;
   return {
@@ -383,6 +387,7 @@ export async function getServerSideProps(context) {
       vaga: vaga || null,
       vagas,
       gerentes,
+      gerentesComerciais,
       unidades,
       pessoaCorretor,
       superior,
