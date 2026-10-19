@@ -4,13 +4,16 @@ import Layout from '../../components/Layout';
 import { requireAuth } from '../../lib/auth';
 import { getVagas, getUnidades, getPessoas, getCandidatosComEntrevista } from '../../lib/data';
 import { Icon } from '../../components/icons';
+import { PAPEL_LABEL } from '../../lib/domain';
 
 export default function Vagas({ vagas, unidades, pessoas, candidatos, baseUrl }) {
   const [showForm, setShowForm] = useState(false);
   const unidadeNome = (id) => unidades.find((u) => u.id === id)?.nome || '—';
   const pessoaNome = (id) => pessoas.find((p) => p.id === id)?.nome || '—';
   const ativas = vagas.filter((v) => v.status === 'ativa');
-  const gerentes = pessoas.filter((p) => p.papel === 'gerente_comercial');
+  // Responsável pela vaga pode ser um gerente comercial ou um coordenador (papel acima na
+  // hierarquia) — alguns coordenadores respondem direto por uma vaga, sem passar por um gerente.
+  const gerentes = pessoas.filter((p) => p.papel === 'gerente_comercial' || p.papel === 'coordenador');
   const linkGeral = `${baseUrl}/p/candidatura/geral`;
 
   return (
@@ -61,12 +64,12 @@ export default function Vagas({ vagas, unidades, pessoas, candidatos, baseUrl })
                 </div>
               </div>
               <div className="field">
-                <label>Gerente comercial responsável</label>
+                <label>Responsável pela vaga (gerente ou coordenador)</label>
                 <select name="gerente_id" defaultValue="">
                   <option value="">Selecione</option>
                   {gerentes.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.nome}
+                      {p.nome} — {PAPEL_LABEL[p.papel]}
                     </option>
                   ))}
                 </select>
@@ -155,7 +158,7 @@ export default function Vagas({ vagas, unidades, pessoas, candidatos, baseUrl })
               <tr>
                 <th>Vaga</th>
                 <th>Unidade</th>
-                <th>Gerente responsável</th>
+                <th>Responsável</th>
                 <th>Candidatos</th>
                 <th>Situação</th>
                 <th />

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Layout from '../../../components/Layout';
 import { requireAuth } from '../../../lib/auth';
 import { getVaga, getUnidades, getPessoas } from '../../../lib/data';
-import { DIA_SEMANA_LABEL } from '../../../lib/domain';
+import { DIA_SEMANA_LABEL, PAPEL_LABEL } from '../../../lib/domain';
 
 export default function VagaDetalhe({ vaga, unidadeNome, unidades, gerentes, baseUrl, erro }) {
   const [editando, setEditando] = useState(false);
@@ -59,12 +59,12 @@ export default function VagaDetalhe({ vaga, unidadeNome, unidades, gerentes, bas
               </div>
               <div className="field-row">
                 <div className="field">
-                  <label>Gerente comercial responsável</label>
+                  <label>Responsável pela vaga (gerente ou coordenador)</label>
                   <select name="gerente_id" defaultValue={vaga.gerente_id || ''}>
                     <option value="">Selecione</option>
                     {gerentes.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.nome}
+                        {p.nome} — {PAPEL_LABEL[p.papel]}
                       </option>
                     ))}
                   </select>
@@ -192,7 +192,8 @@ export async function getServerSideProps(context) {
       vaga: vaga || null,
       unidadeNome: vaga ? unidades.find((u) => u.id === vaga.unidade_id)?.nome || '—' : '—',
       unidades,
-      gerentes: pessoas.filter((p) => p.papel === 'gerente_comercial'),
+      // Responsável pela vaga pode ser um gerente comercial ou um coordenador — ver vagas.js.
+      gerentes: pessoas.filter((p) => p.papel === 'gerente_comercial' || p.papel === 'coordenador'),
       baseUrl,
       erro: context.query.erro === '1',
     },
