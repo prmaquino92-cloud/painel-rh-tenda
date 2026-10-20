@@ -27,6 +27,13 @@ const MENSAGEM_ABORDAGEM_POR_ORIGEM = {
     const saudacao = primeiroNome ? `Oi, ${primeiroNome}, tudo bem?` : 'Oi, tudo bem?';
     return `${saudacao} Aqui é o Pedro, do RH da Tenda Vendas.\nTô conversando com alguns corretores aqui da região sobre um modelo em que a comissão cai em torno de 10 dias depois do ato — sem esperar a assinatura na Caixa.\nPosso te mandar como funciona? É rapidinho :)`;
   },
+  // Leads de busca ativa no banco de currículos do Infojobs/Catho (via Pandapé) — a pessoa não
+  // se candidatou a nada na Tenda, então "vi seu cadastro" gera a dúvida "cadastro onde?". Aqui
+  // já deixa claro de onde veio o contato.
+  pandape: (primeiroNome) => {
+    const saudacao = primeiroNome ? `Olá ${primeiroNome}` : 'Olá';
+    return `${saudacao}, tudo bem? Aqui é da Tenda Vendas! Encontrei seu currículo disponível no Infojobs/Catho e, pelo seu perfil, achei que você tem bastante a ver com uma oportunidade que temos aqui pra corretor parceiro. Posso te contar mais?`;
+  },
 };
 
 // Vagas com uma mensagem de abordagem própria (pedido pelo Pedro), com prioridade sobre a
