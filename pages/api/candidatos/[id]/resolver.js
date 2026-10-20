@@ -1,10 +1,11 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 
 // Fecha a decisão de um candidato que ficou em aberto após o feedback do gerente
 // ("avaliar junto ao RH" ou "aguardar definição do candidato") — você bate o martelo aqui.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -22,6 +23,13 @@ export default async function handler(req, res) {
   }
 
   const sb = supabaseAdmin();
+  const { data: candidatoAtual } = await sb.from('candidatos').select('vaga_id').eq('id', id).maybeSingle();
+  if (!(await usuarioPodeAgirNaVaga(usuario, candidatoAtual?.vaga_id))) {
+    res.writeHead(302, { Location: '/app/candidatos?erro=1' });
+    res.end();
+    return;
+  }
+
   const { error } = await sb
     .from('candidatos')
     .update({ status: decisao, atualizado_em: new Date().toISOString() })

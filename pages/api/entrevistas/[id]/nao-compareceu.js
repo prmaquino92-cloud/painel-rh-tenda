@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 import { gerarToken, fmtData } from '../../../../lib/domain';
 import { enviarEmail } from '../../../../lib/google';
 
@@ -8,7 +8,8 @@ import { enviarEmail } from '../../../../lib/google';
 // esforço, um e-mail avisando o candidato com um link pra ele mesmo escolher novo horário —
 // o link reaproveita a mesma ficha (candidato_id), nunca cria um candidato novo.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -25,6 +26,11 @@ export default async function handler(req, res) {
     .eq('id', id)
     .maybeSingle();
   if (errE || !entrevista) {
+    res.writeHead(302, { Location: '/app/agenda?erro=1' });
+    res.end();
+    return;
+  }
+  if (!(await usuarioPodeAgirNaVaga(usuario, entrevista.vaga_id))) {
     res.writeHead(302, { Location: '/app/agenda?erro=1' });
     res.end();
     return;

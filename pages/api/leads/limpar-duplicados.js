@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../lib/supabase';
-import { isAuthenticated } from '../../../lib/auth';
+import { carregarUsuario } from '../../../lib/sessaoUsuario';
 import { getLeads } from '../../../lib/data';
 
 // Remove leads duplicados pelo MESMO TELEFONE — mesmo quando o nome cadastrado varia entre eles
@@ -36,7 +36,8 @@ function normTelefone(s) {
 const PRIORIDADE_STATUS = { convertido: 3, declinado: 2, sem_contato: 1, novo: 0 };
 
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario || usuario.tipo !== 'admin') {
     res.status(401).end();
     return;
   }

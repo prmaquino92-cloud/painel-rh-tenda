@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../lib/supabase';
-import { isAuthenticated } from '../../../lib/auth';
+import { carregarUsuario } from '../../../lib/sessaoUsuario';
 import { getLeads } from '../../../lib/data';
 import { STATUS_CANDIDATO } from '../../../lib/domain';
 
@@ -22,7 +22,8 @@ function normEmail(s) {
 // entrevista, aprovado, contratado ou declinado — porque "Convertido" no funil de leads só
 // significa "virou candidatura", independente do resultado final dela.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario || usuario.tipo !== 'admin') {
     res.status(401).end();
     return;
   }

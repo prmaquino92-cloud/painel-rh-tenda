@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 import { ORIGEM_ORDEM } from '../../../../lib/domain';
 
 // Edita os dados cadastrais de um lead já existente (nome, telefone, e-mail, localidade, vaga
@@ -7,7 +7,8 @@ import { ORIGEM_ORDEM } from '../../../../lib/domain';
 // principalmente pra preencher o nome de leads importados só com telefone (ex: "Sem nome (final
 // 1234)") e pra corrigir dados digitados errado.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -26,6 +27,13 @@ export default async function handler(req, res) {
   const sb = supabaseAdmin();
   const { data: lead, error: errL } = await sb.from('leads').select('*').eq('id', id).maybeSingle();
   if (errL || !lead) {
+    res.writeHead(302, { Location: '/app/leads?erro=1' });
+    res.end();
+    return;
+  }
+  // Confere tanto a vaga atual do lead quanto a nova (um gerente não pode "roubar" um lead de
+  // outra equipe trocando o vaga_id, nem mover um lead seu pra fora da própria equipe).
+  if (!(await usuarioPodeAgirNaVaga(usuario, lead.vaga_id)) || !(await usuarioPodeAgirNaVaga(usuario, vaga_id || lead.vaga_id))) {
     res.writeHead(302, { Location: '/app/leads?erro=1' });
     res.end();
     return;

@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 import { gerarToken } from '../../../../lib/domain';
 import { criarEventoPresencial } from '../../../../lib/google';
 
@@ -11,7 +11,8 @@ import { criarEventoPresencial } from '../../../../lib/google';
 // qualquer lugar que busca "a" 2ª entrevista do candidato — e limpa o feedback antigo do
 // gerente, já que ele se refere à conversa anterior, não a essa nova.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -34,6 +35,11 @@ export default async function handler(req, res) {
     .eq('id', id)
     .maybeSingle();
   if (errC || !candidato) {
+    res.writeHead(302, { Location: '/app/candidatos?erro=1' });
+    res.end();
+    return;
+  }
+  if (!(await usuarioPodeAgirNaVaga(usuario, candidato.vaga_id))) {
     res.writeHead(302, { Location: '/app/candidatos?erro=1' });
     res.end();
     return;

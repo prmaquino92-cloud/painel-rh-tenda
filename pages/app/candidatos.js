@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Layout from '../../components/Layout';
-import { requireAuth } from '../../lib/auth';
+import { requireUsuario, getVagaIdsDoGerente } from '../../lib/sessaoUsuario';
 import { getCandidatosComEntrevista, getVagas, getPessoas, getUnidades } from '../../lib/data';
 import { STATUS_CANDIDATO, FEEDBACK_DECISAO, ORIGEM_LABEL, ORIGEM_ORDEM, initials, fmtData } from '../../lib/domain';
 import { Icon } from '../../components/icons';
@@ -14,7 +14,7 @@ import {
 
 // Cadastro manual de candidato + 1ª entrevista — pra registrar rápido alguém que você já
 // conversou e agendou (ou já entrevistou) fora do painel, ex.: pelo WhatsApp.
-function CadastroManualForm({ vagas, onCancel }) {
+function CadastroManualForm({ vagas, onCancel, souAdmin }) {
   const [situacao, setSituacao] = useState('agendada');
   return (
     <div className="card form-card" style={{ marginTop: 16 }}>
@@ -60,14 +60,15 @@ function CadastroManualForm({ vagas, onCancel }) {
             </div>
             <div className="field">
               <label>Vaga (opcional)</label>
-              <select name="vaga_id" defaultValue="">
-                <option value="">Definir depois</option>
+              <select name="vaga_id" defaultValue="" required={!souAdmin}>
+                {souAdmin ? <option value="">Definir depois</option> : <option value="" disabled>Selecione uma vaga sua</option>}
                 {vagas.map((v) => (
                   <option key={v.id} value={v.id}>
                     {v.titulo}
                   </option>
                 ))}
               </select>
+              {!souAdmin ? <p className="hint">Como gerente, o candidato precisa já estar vinculado a uma das suas vagas.</p> : null}
             </div>
           </div>
           <div className="field">
@@ -270,7 +271,8 @@ function CorrigirStatusRealizada() {
   );
 }
 
-export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseUrl, erro }) {
+export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseUrl, erro, usuario }) {
+  const souAdmin = usuario.tipo === 'admin';
   const [busca, setBusca] = useState('');
   const [fVaga, setFVaga] = useState('');
   const [fOrigem, setFOrigem] = useState('');
@@ -360,16 +362,24 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
   });
 
   return (
-    <Layout active="candidatos" crumb="Recrutamento" title="Candidatos" pendentes={candidatos.filter((c) => c.status === 'inscrito').length}>
+    <Layout
+      active="candidatos"
+      crumb="Recrutamento"
+      title="Candidatos"
+      pendentes={candidatos.filter((c) => c.status === 'inscrito').length}
+      usuario={usuario}
+    >
       <div className="toolbar" style={{ justifyContent: 'space-between' }}>
         <p style={{ fontSize: 12.8, color: 'var(--ink-soft)', maxWidth: 480 }}>
           Pipeline único, alimentado pelo formulário público de candidatura de cada vaga — e também pelo cadastro manual, pra quem você já
           contatou e agendou fora do painel.
         </p>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-outline" onClick={() => setShowCorrigirRealizada((v) => !v)}>
-            {Icon.plus({ className: 'ic' })} Corrigir status presos
-          </button>
+          {usuario.tipo === 'admin' ? (
+            <button className="btn btn-outline" onClick={() => setShowCorrigirRealizada((v) => !v)}>
+              {Icon.plus({ className: 'ic' })} Corrigir status presos
+            </button>
+          ) : null}
           <button className="btn btn-primary" onClick={() => setShowManual((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Adicionar candidato
           </button>
@@ -398,7 +408,7 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
         </div>
       ) : null}
       {showCorrigirRealizada ? <CorrigirStatusRealizada /> : null}
-      {showManual ? <CadastroManualForm vagas={vagas} onCancel={() => setShowManual(false)} /> : null}
+      {showManual ? <CadastroManualForm vagas={vagas} onCancel={() => setShowManual(false)} souAdmin={souAdmin} /> : null}
       <div className="tabs" style={{ marginTop: 16, flexWrap: 'wrap' }}>
         <button
           type="button"
@@ -791,10 +801,18 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
 }
 
 export async function getServerSideProps(context) {
-  const redirect = requireAuth(context);
-  if (redirect) return redirect;
-  const [candidatos, vagas, pessoas, unidades] = await Promise.all([getCandidatosComEntrevista(), getVagas(), getPessoas(), getUnidades()]);
+  const { usuario, redirect } = await requireUsuario(context);
+  if (!usuario) return { redirect };
+  let [candidatos, vagas, pessoas, unidades] = await Promise.all([getCandidatosComEntrevista(), getVagas(), getPessoas(), getUnidades()]);
+  // Gerente só vê candidatos das vagas em que é responsável. `pessoas` e `unidades` continuam
+  // completos — servem só pra preencher os dropdowns de "Gerente responsável"/"Unidade" da
+  // entrevista e da equipe (nomes de colegas e unidades, não dados sensíveis de outro time).
+  if (usuario.tipo === 'gerente') {
+    const vagaIds = await getVagaIdsDoGerente(usuario.pessoaId);
+    candidatos = candidatos.filter((c) => c.vaga_id && vagaIds.includes(c.vaga_id));
+    vagas = vagas.filter((v) => vagaIds.includes(v.id));
+  }
   const proto = context.req.headers['x-forwarded-proto'] || 'https';
   const baseUrl = `${proto}://${context.req.headers.host}`;
-  return { props: { candidatos, vagas, pessoas, unidades, baseUrl, erro: context.query.erro === '1' } };
+  return { props: { candidatos, vagas, pessoas, unidades, baseUrl, erro: context.query.erro === '1', usuario } };
 }

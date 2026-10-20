@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 import { reagendarEvento, criarEventoComMeet, criarEventoPresencial } from '../../../../lib/google';
 
 // Reagenda uma entrevista para nova data/horário: atualiza data/hora no painel e, se ela tinha
@@ -8,7 +8,8 @@ import { reagendarEvento, criarEventoComMeet, criarEventoPresencial } from '../.
 // desconectado), cria um novo agora — melhor esforço em ambos os casos: se o Google não
 // estiver conectado, a entrevista é reagendada no painel do mesmo jeito.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -28,9 +29,14 @@ export default async function handler(req, res) {
   const sb = supabaseAdmin();
   const { data: entrevista } = await sb
     .from('entrevistas')
-    .select('google_event_id, tipo, gerente_id, unidade_id, feedback_token, candidatos(nome,email), vagas(titulo)')
+    .select('google_event_id, tipo, gerente_id, unidade_id, feedback_token, vaga_id, candidatos(nome,email), vagas(titulo)')
     .eq('id', id)
     .maybeSingle();
+  if (!entrevista || !(await usuarioPodeAgirNaVaga(usuario, entrevista.vaga_id))) {
+    res.writeHead(302, { Location: '/app/agenda?erro=1' });
+    res.end();
+    return;
+  }
 
   // reagendar sempre volta a entrevista pro status "agendada" (cobre o caso de reagendar uma
   // que estava com "não compareceu" ou "cancelada") e invalida um eventual link de remarcação

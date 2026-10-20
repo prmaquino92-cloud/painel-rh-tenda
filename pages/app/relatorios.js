@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import Layout from '../../components/Layout';
-import { requireAuth } from '../../lib/auth';
+import { requireUsuario, getVagaIdsDoGerente } from '../../lib/sessaoUsuario';
 import { getEntrevistasAgendadas, getCandidatosComEntrevista, getLeads, getVagas, getPessoas } from '../../lib/data';
 import { fmtData, agoraSaoPaulo, ORIGEM_LABEL, ORIGEM_ORDEM, PAPEL_LABEL } from '../../lib/domain';
 import {
@@ -274,11 +274,13 @@ export default function Relatorios({
   pessoasPorId,
   turnover,
   geradoEm,
+  usuario,
 }) {
   const mesLabel = `${MES_LABEL[Number(mes.mesIso.slice(5, 7)) - 1]} de ${mes.mesIso.slice(0, 4)}`;
+  const souAdmin = usuario.tipo === 'admin';
 
   return (
-    <Layout active="relatorios" crumb="Recrutamento" title="Relatórios">
+    <Layout active="relatorios" crumb="Recrutamento" title="Relatórios" usuario={usuario}>
       <div className="print-header">
         <h1 style={{ margin: 0, fontSize: 20 }}>Tenda Vendas — Relatório de Recrutamento</h1>
         <p style={{ margin: '4px 0 0', fontSize: 12, color: '#555' }}>
@@ -395,31 +397,46 @@ export default function Relatorios({
         labelVazio="Nenhum movimento em nenhuma equipe nesse mês."
       />
 
-      <div className="section-head">
-        <div>
-          <h2>Turnover da equipe</h2>
-          <p>
-            {mesLabel} — desligamentos contados pela data do desligamento. "Equipe de referência" é quem está ativo hoje somado a quem foi
-            desligado nesse mês, como aproximação de quantos estariam ativos sem esses desligamentos.
-          </p>
-        </div>
-      </div>
-      <Turnover turnover={turnover} />
+      {souAdmin ? (
+        <>
+          <div className="section-head">
+            <div>
+              <h2>Turnover da equipe</h2>
+              <p>
+                {mesLabel} — desligamentos contados pela data do desligamento. "Equipe de referência" é quem está ativo hoje somado a quem foi
+                desligado nesse mês, como aproximação de quantos estariam ativos sem esses desligamentos.
+              </p>
+            </div>
+          </div>
+          <Turnover turnover={turnover} />
+        </>
+      ) : null}
     </Layout>
   );
 }
 
 export async function getServerSideProps(context) {
-  const redirect = requireAuth(context);
-  if (redirect) return redirect;
+  const { usuario, redirect } = await requireUsuario(context);
+  if (!usuario) return { redirect };
 
-  const [entrevistas, candidatos, leads, vagas, pessoas] = await Promise.all([
+  let [entrevistas, candidatos, leads, vagas, pessoas] = await Promise.all([
     getEntrevistasAgendadas(),
     getCandidatosComEntrevista(),
     getLeads(),
     getVagas(),
     getPessoas(),
   ]);
+
+  // Gerente só vê a produção da própria equipe (vagas em que é responsável) — entrevistas,
+  // candidatos e leads de fora disso nem entram nas métricas abaixo.
+  let vagaIdsDoGerente = null;
+  if (usuario.tipo === 'gerente') {
+    vagaIdsDoGerente = await getVagaIdsDoGerente(usuario.pessoaId);
+    entrevistas = entrevistas.filter((e) => e.vaga_id && vagaIdsDoGerente.includes(e.vaga_id));
+    candidatos = candidatos.filter((c) => c.vaga_id && vagaIdsDoGerente.includes(c.vaga_id));
+    leads = leads.filter((l) => l.vaga_id && vagaIdsDoGerente.includes(l.vaga_id));
+    vagas = vagas.filter((v) => vagaIdsDoGerente.includes(v.id));
+  }
 
   const hoje = agoraSaoPaulo();
   const hojeIso = hoje.toISOString().slice(0, 10);
@@ -469,8 +486,13 @@ export async function getServerSideProps(context) {
   // Por equipe — "equipe" aqui é o gerente comercial responsável pela vaga (cadastro em
   // Vagas > Gerente comercial responsável), não a equipe formada depois da contratação (essa só
   // existe pra quem já foi contratado). Leads/candidatos de uma vaga sem gerente definido, ou
-  // sem vaga nenhuma, caem no mesmo "Sem equipe definida".
-  const gerentesOrdenados = pessoas.filter((p) => p.papel === 'gerente_comercial').sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  // sem vaga nenhuma, caem no mesmo "Sem equipe definida". Pra um gerente, essa tabela só
+  // mostra a própria linha — ele já só tem dados das vagas dele mesmo, mas sem restringir as
+  // chaves a tabela ficaria listando todos os colegas (com zero em tudo) sem necessidade.
+  const gerentesOrdenados =
+    usuario.tipo === 'gerente'
+      ? pessoas.filter((p) => p.id === usuario.pessoaId)
+      : pessoas.filter((p) => p.papel === 'gerente_comercial').sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   const vagaParaGerenteId = Object.fromEntries(vagas.map((v) => [v.id, v.gerente_id || null]));
   const funilEquipe = calcularFunilAgrupado({
     leads,
@@ -480,9 +502,14 @@ export async function getServerSideProps(context) {
     chaves: [...gerentesOrdenados.map((p) => p.id), null],
     extrairChave: (item) => (item.vaga_id ? vagaParaGerenteId[item.vaga_id] ?? null : null),
   });
-  const pessoasPorId = Object.fromEntries(pessoas.map((p) => [p.id, p]));
+  const pessoasPorId = Object.fromEntries(gerentesOrdenados.map((p) => [p.id, p]));
 
-  const turnover = calcularTurnover({ pessoas, inicio: mesInicio, fim: mesFim });
+  // Turnover é da operação inteira (desligamentos de qualquer equipe) — não tem um recorte por
+  // vaga, então não existe um "turnover só da minha equipe" certo de calcular. Em vez de montar
+  // um recorte artificial, essa seção some inteira pro gerente (ver JSX) — e, pra não vazar os
+  // nomes/motivos de desligamentos de outras equipes pela própria página (os props vão pro
+  // HTML/JSON da página mesmo quando a seção não é desenhada), nem calcula pra ele.
+  const turnover = usuario.tipo === 'admin' ? calcularTurnover({ pessoas, inicio: mesInicio, fim: mesFim }) : null;
 
   const geradoEm = `${String(hoje.getUTCDate()).padStart(2, '0')}/${String(hoje.getUTCMonth() + 1).padStart(2, '0')}/${hoje.getUTCFullYear()} às ${String(hoje.getUTCHours()).padStart(2, '0')}:${String(hoje.getUTCMinutes()).padStart(2, '0')}`;
 
@@ -513,6 +540,7 @@ export async function getServerSideProps(context) {
       pessoasPorId,
       turnover,
       geradoEm,
+      usuario,
     },
   };
 }

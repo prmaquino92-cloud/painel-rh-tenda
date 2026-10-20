@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import Layout from '../../components/Layout';
-import { requireAuth } from '../../lib/auth';
+import { requireUsuario, bloquearSeNaoForAdmin } from '../../lib/sessaoUsuario';
 import { getPessoas, getUnidades } from '../../lib/data';
 import { PAPEL_LABEL, PAPEL_ORDEM, STATUS_PESSOA, MOTIVOS_DESLIGAMENTO, initials, fmtData } from '../../lib/domain';
 import { Icon } from '../../components/icons';
@@ -179,7 +179,7 @@ const ABAS = [
   { id: 'todos', label: 'Todos' },
 ];
 
-export default function Hierarquia({ pessoas, unidades, erro }) {
+export default function Hierarquia({ pessoas, unidades, erro, usuario }) {
   const [showPessoa, setShowPessoa] = useState(false);
   const [showLink, setShowLink] = useState(false);
   const [busca, setBusca] = useState('');
@@ -215,7 +215,7 @@ export default function Hierarquia({ pessoas, unidades, erro }) {
   const colCount = aba === 'desligados' ? 8 : 6;
 
   return (
-    <Layout active="hierarquia" crumb="Cadastros únicos" title="Hierarquia & Pessoas">
+    <Layout active="hierarquia" crumb="Cadastros únicos" title="Hierarquia & Pessoas" usuario={usuario}>
       {erro ? (
         <div className="note" style={{ marginBottom: 16 }}>
           Não foi possível salvar. Confira o nome, o papel e se o superior escolhido é válido, e tente de novo.
@@ -504,8 +504,10 @@ export default function Hierarquia({ pessoas, unidades, erro }) {
 }
 
 export async function getServerSideProps(context) {
-  const redirect = requireAuth(context);
-  if (redirect) return redirect;
+  const { usuario, redirect } = await requireUsuario(context);
+  if (!usuario) return { redirect };
+  const bloqueio = bloquearSeNaoForAdmin(usuario);
+  if (bloqueio) return bloqueio;
   const [pessoas, unidades] = await Promise.all([getPessoas(), getUnidades()]);
-  return { props: { pessoas, unidades, erro: context.query.erro === '1' } };
+  return { props: { pessoas, unidades, erro: context.query.erro === '1', usuario } };
 }

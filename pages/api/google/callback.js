@@ -1,8 +1,9 @@
-import { isAuthenticated } from '../../../lib/auth';
+import { carregarUsuario } from '../../../lib/sessaoUsuario';
 import { exchangeCodeForTokens, fetchUserEmail, saveTokens } from '../../../lib/google';
 
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario || usuario.tipo !== 'admin') {
     res.writeHead(302, { Location: '/login' });
     res.end();
     return;

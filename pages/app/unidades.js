@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import Layout from '../../components/Layout';
-import { requireAuth } from '../../lib/auth';
+import { requireUsuario, bloquearSeNaoForAdmin } from '../../lib/sessaoUsuario';
 import { getUnidades, getPessoas, getVagas } from '../../lib/data';
 import { Icon } from '../../components/icons';
 
-export default function Unidades({ unidades, pessoas, vagas }) {
+export default function Unidades({ unidades, pessoas, vagas, usuario }) {
   const [showForm, setShowForm] = useState(false);
 
   return (
-    <Layout active="unidades" crumb="Cadastros únicos" title="Unidades">
+    <Layout active="unidades" crumb="Cadastros únicos" title="Unidades" usuario={usuario}>
       <div className="toolbar" style={{ justifyContent: 'space-between' }}>
         <p style={{ fontSize: 12.8, color: 'var(--ink-soft)', maxWidth: 480 }}>
           Cada unidade agrupa gerentes, equipe e vagas. Cadastre quantas unidades a operação precisar.
@@ -83,8 +83,10 @@ export default function Unidades({ unidades, pessoas, vagas }) {
 }
 
 export async function getServerSideProps(context) {
-  const redirect = requireAuth(context);
-  if (redirect) return redirect;
+  const { usuario, redirect } = await requireUsuario(context);
+  if (!usuario) return { redirect };
+  const bloqueio = bloquearSeNaoForAdmin(usuario);
+  if (bloqueio) return bloqueio;
   const [unidades, pessoas, vagas] = await Promise.all([getUnidades(), getPessoas(), getVagas()]);
-  return { props: { unidades, pessoas, vagas } };
+  return { props: { unidades, pessoas, vagas, usuario } };
 }

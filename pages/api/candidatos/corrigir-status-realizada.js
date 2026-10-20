@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../lib/supabase';
-import { isAuthenticated } from '../../../lib/auth';
+import { carregarUsuario } from '../../../lib/sessaoUsuario';
 import { getCandidatosComEntrevista } from '../../../lib/data';
 
 // Conserto único: antes, marcar a entrevista como "realizada" na Agenda não avançava o status
@@ -9,7 +9,8 @@ import { getCandidatosComEntrevista } from '../../../lib/data';
 // entrevista "realizada" mas status ainda em "Entrevista agendada" — avança pra "Entrevistado".
 // Mesmo padrão dry-run/aplicar das outras ferramentas de manutenção do painel.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario || usuario.tipo !== 'admin') {
     res.status(401).end();
     return;
   }

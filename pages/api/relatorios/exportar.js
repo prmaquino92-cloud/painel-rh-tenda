@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { isAuthenticated } from '../../../lib/auth';
+import { carregarUsuario, getVagaIdsDoGerente } from '../../../lib/sessaoUsuario';
 import { getEntrevistasAgendadas, getCandidatosComEntrevista, getLeads, getVagas, getPessoas } from '../../../lib/data';
 import { ORIGEM_LABEL, ORIGEM_ORDEM, PAPEL_LABEL, fmtData, agoraSaoPaulo } from '../../../lib/domain';
 import { MES_LABEL, fimDoMes, calcularMetricas, calcularFunilAgrupado, calcularTurnover, fmtPct } from '../../../lib/relatorios';
@@ -36,7 +36,8 @@ function abaAgrupada(wb, nomeAba, colunaChave, resolverLabel, funil) {
 // Relatórios (lib/relatorios.js), só que servida como download em vez de HTML. ?mes=YYYY-MM e
 // ?origem=<código> (opcional) espelham os filtros que já estavam abertos na tela.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -52,13 +53,22 @@ export default async function handler(req, res) {
   const mesFim = fimDoMes(mesIso);
   const mesLabel = `${MES_LABEL[Number(mesIso.slice(5, 7)) - 1]} de ${mesIso.slice(0, 4)}`;
 
-  const [entrevistas, candidatos, leads, vagas, pessoas] = await Promise.all([
+  let [entrevistas, candidatos, leads, vagas, pessoas] = await Promise.all([
     getEntrevistasAgendadas(),
     getCandidatosComEntrevista(),
     getLeads(),
     getVagas(),
     getPessoas(),
   ]);
+
+  // Mesmo recorte da tela de Relatórios: gerente só exporta a produção da própria equipe.
+  if (usuario.tipo === 'gerente') {
+    const vagaIds = await getVagaIdsDoGerente(usuario.pessoaId);
+    entrevistas = entrevistas.filter((e) => e.vaga_id && vagaIds.includes(e.vaga_id));
+    candidatos = candidatos.filter((c) => c.vaga_id && vagaIds.includes(c.vaga_id));
+    leads = leads.filter((l) => l.vaga_id && vagaIds.includes(l.vaga_id));
+    vagas = vagas.filter((v) => vagaIds.includes(v.id));
+  }
 
   const metricas = calcularMetricas({ entrevistas, candidatos, inicio: mesInicio, fim: mesFim, hojeIso, origem });
 
@@ -84,7 +94,10 @@ export default async function handler(req, res) {
   });
   const vagasPorId = Object.fromEntries(vagas.map((v) => [v.id, v]));
 
-  const gerentesOrdenados = pessoas.filter((p) => p.papel === 'gerente_comercial').sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const gerentesOrdenados =
+    usuario.tipo === 'gerente'
+      ? pessoas.filter((p) => p.id === usuario.pessoaId)
+      : pessoas.filter((p) => p.papel === 'gerente_comercial').sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   const vagaParaGerenteId = Object.fromEntries(vagas.map((v) => [v.id, v.gerente_id || null]));
   const funilEquipe = calcularFunilAgrupado({
     leads,
@@ -94,9 +107,11 @@ export default async function handler(req, res) {
     chaves: [...gerentesOrdenados.map((p) => p.id), null],
     extrairChave: (item) => (item.vaga_id ? vagaParaGerenteId[item.vaga_id] ?? null : null),
   });
-  const pessoasPorId = Object.fromEntries(pessoas.map((p) => [p.id, p]));
+  const pessoasPorId = Object.fromEntries(gerentesOrdenados.map((p) => [p.id, p]));
 
-  const turnover = calcularTurnover({ pessoas, inicio: mesInicio, fim: mesFim });
+  // Turnover é da operação inteira — sem recorte por equipe que faça sentido (ver mesma nota na
+  // tela de Relatórios), então a aba nem entra na planilha do gerente.
+  const turnover = usuario.tipo === 'admin' ? calcularTurnover({ pessoas, inicio: mesInicio, fim: mesFim }) : null;
 
   const wb = XLSX.utils.book_new();
 
@@ -142,21 +157,23 @@ export default async function handler(req, res) {
     funilEquipe
   );
 
-  const wsTurnover = XLSX.utils.aoa_to_sheet([
-    ['Turnover da equipe', ''],
-    ['Desligamentos no mês', turnover.totalDesligamentos],
-    ['Equipe de referência', turnover.headcountReferencia],
-    ['Ativos hoje', turnover.ativosAtuais],
-    ['Taxa de turnover', fmtPct(turnover.taxaTurnover)],
-    [],
-    ['Por motivo', ''],
-    ...turnover.porMotivo.map((m) => [m.motivo, m.total]),
-    [],
-    ['Pessoa', 'Papel', 'Desligado em', 'Motivo'],
-    ...turnover.desligamentos.map((p) => [p.nome, PAPEL_LABEL[p.papel] || '—', fmtData(p.desligado_em), p.motivo_desligamento || '—']),
-  ]);
-  wsTurnover['!cols'] = [{ wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 30 }];
-  XLSX.utils.book_append_sheet(wb, wsTurnover, 'Turnover');
+  if (turnover) {
+    const wsTurnover = XLSX.utils.aoa_to_sheet([
+      ['Turnover da equipe', ''],
+      ['Desligamentos no mês', turnover.totalDesligamentos],
+      ['Equipe de referência', turnover.headcountReferencia],
+      ['Ativos hoje', turnover.ativosAtuais],
+      ['Taxa de turnover', fmtPct(turnover.taxaTurnover)],
+      [],
+      ['Por motivo', ''],
+      ...turnover.porMotivo.map((m) => [m.motivo, m.total]),
+      [],
+      ['Pessoa', 'Papel', 'Desligado em', 'Motivo'],
+      ...turnover.desligamentos.map((p) => [p.nome, PAPEL_LABEL[p.papel] || '—', fmtData(p.desligado_em), p.motivo_desligamento || '—']),
+    ]);
+    wsTurnover['!cols'] = [{ wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, wsTurnover, 'Turnover');
+  }
 
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 

@@ -1,10 +1,10 @@
 import Link from 'next/link';
 import Layout from '../../components/Layout';
-import { requireAuth } from '../../lib/auth';
+import { requireUsuario } from '../../lib/sessaoUsuario';
 import { getUnidades, getPessoas, getVagas, getCandidatosComEntrevista, getLeads } from '../../lib/data';
 import { STATUS_CANDIDATO, PAPEL_LABEL, ORIGEM_LABEL, ORIGEM_ORDEM, initials, fmtData } from '../../lib/domain';
 
-export default function VisaoGeral({ unidades, pessoas, vagas, candidatos, leads }) {
+export default function VisaoGeral({ unidades, pessoas, vagas, candidatos, leads, usuario }) {
   const vagasAtivas = vagas.filter((v) => v.status === 'ativa').length;
   const candidatosAtivos = candidatos.filter((c) => !['contratado', 'declinado'].includes(c.status)).length;
   const funilEtapas = ['inscrito', 'entrevista_agendada', 'entrevistado', 'aprovado', 'contratado'];
@@ -26,7 +26,13 @@ export default function VisaoGeral({ unidades, pessoas, vagas, candidatos, leads
   }).filter((o) => o.leads > 0 || o.candidatos > 0);
 
   return (
-    <Layout active="geral" crumb="Central de trabalho" title="Visão geral" pendentes={candidatos.filter((c) => c.status === 'inscrito').length}>
+    <Layout
+      active="geral"
+      crumb="Central de trabalho"
+      title="Visão geral"
+      pendentes={candidatos.filter((c) => c.status === 'inscrito').length}
+      usuario={usuario}
+    >
       <div className="card" style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-soft))', color: '#fff', border: 'none' }}>
         <div className="card-pad" style={{ display: 'flex', justifyContent: 'space-between', gap: 20, flexWrap: 'wrap', alignItems: 'center' }}>
           <div>
@@ -176,8 +182,14 @@ export default function VisaoGeral({ unidades, pessoas, vagas, candidatos, leads
 }
 
 export async function getServerSideProps(context) {
-  const redirect = requireAuth(context);
-  if (redirect) return redirect;
+  const { usuario, redirect } = await requireUsuario(context);
+  if (!usuario) return { redirect };
+  // Essa tela mostra números da empresa inteira (todas as unidades/vagas/candidatos) — não está
+  // na lista de telas do gerente (Leads, Candidatos, Relatórios, Agenda), então ele é mandado
+  // direto pra Leads, que é a própria "central de trabalho" dele.
+  if (usuario.tipo === 'gerente') {
+    return { redirect: { destination: '/app/leads', permanent: false } };
+  }
   const [unidades, pessoas, vagas, candidatos, leads] = await Promise.all([
     getUnidades(),
     getPessoas(),
@@ -185,5 +197,5 @@ export async function getServerSideProps(context) {
     getCandidatosComEntrevista(),
     getLeads(),
   ]);
-  return { props: { unidades, pessoas, vagas, candidatos, leads } };
+  return { props: { unidades, pessoas, vagas, candidatos, leads, usuario } };
 }

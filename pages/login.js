@@ -17,14 +17,19 @@ export default function Login() {
           </div>
           <h1 style={{ fontSize: 19, margin: '0 0 4px' }}>Painel RH Tenda</h1>
           <p style={{ fontSize: 12.8, color: 'var(--ink-soft)', margin: '0 0 18px' }}>
-            Entre com a senha do painel para continuar.
+            Se você tem login individual (gerente/coordenador), entre com seu e-mail e senha. Se usa a senha única do painel, deixe o
+            e-mail em branco.
           </p>
           {erro ? (
             <div className="note" style={{ marginBottom: 14 }}>
-              Senha incorreta. Tente novamente.
+              E-mail ou senha incorretos. Tente novamente.
             </div>
           ) : null}
           <form method="POST" action="/api/auth/login">
+            <div className="field">
+              <label>E-mail (deixe em branco pra usar a senha única)</label>
+              <input type="email" name="email" placeholder="seu@email.com" />
+            </div>
             <div className="field">
               <label>Senha</label>
               <input type="password" name="password" autoFocus required />

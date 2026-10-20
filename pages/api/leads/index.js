@@ -1,9 +1,10 @@
 import { supabaseAdmin } from '../../../lib/supabase';
-import { isAuthenticated } from '../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../lib/sessaoUsuario';
 import { ORIGEM_ORDEM } from '../../../lib/domain';
 
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -13,6 +14,13 @@ export default async function handler(req, res) {
   }
   const { nome, telefone, email, localidade, vaga_id, origem } = req.body || {};
   if (!nome || !nome.trim()) {
+    res.writeHead(302, { Location: '/app/leads?erro=1' });
+    res.end();
+    return;
+  }
+  // Gerente só cadastra lead já vinculado a uma vaga dele — sem vaga, o lead não seria "da
+  // equipe" de ninguém e desapareceria da própria visão dele assim que criado.
+  if (!(await usuarioPodeAgirNaVaga(usuario, vaga_id || null))) {
     res.writeHead(302, { Location: '/app/leads?erro=1' });
     res.end();
     return;

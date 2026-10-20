@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../lib/supabase';
-import { isAuthenticated } from '../../../lib/auth';
+import { carregarUsuario } from '../../../lib/sessaoUsuario';
 import { getLeads } from '../../../lib/data';
 import { limparLocalidade } from '../../../lib/domain';
 
@@ -10,7 +10,8 @@ import { limparLocalidade } from '../../../lib/domain';
 // "Cidade - UF" quando reconhece o padrão; quando já é só um nome de bairro em maiúsculas (sem
 // cidade — essa informação não existe nesse formato), só corrige a capitalização.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario || usuario.tipo !== 'admin') {
     res.status(401).end();
     return;
   }

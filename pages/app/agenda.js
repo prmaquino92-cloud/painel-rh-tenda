@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
-import { requireAuth } from '../../lib/auth';
+import { requireUsuario, getVagaIdsDoGerente } from '../../lib/sessaoUsuario';
 import { getEntrevistasAgendadas, getBloqueios, getPessoas, getUnidades } from '../../lib/data';
 import { getGoogleStatus, getBusyIntervals } from '../../lib/google';
 import {
@@ -353,8 +353,9 @@ function CaixinhaRecolhivel({ titulo, entrevistas, aberto, onToggle, reagendando
   );
 }
 
-export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoas, unidades, horariosLivres, erro }) {
+export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoas, unidades, horariosLivres, erro, usuario }) {
   const router = useRouter();
+  const souAdmin = usuario.tipo === 'admin';
   const [showForm, setShowForm] = useState(false);
   const [tipo, setTipo] = useState('pontual');
   const [showRealizadas, setShowRealizadas] = useState(false);
@@ -367,61 +368,66 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
   const naoCompareceuCanceladas = entrevistas.filter((e) => e.status === 'cancelada' || e.status === 'nao_compareceu');
 
   return (
-    <Layout active="agenda" crumb="Recrutamento" title="Agenda de entrevistas">
-      <div className="note" style={{ marginBottom: 18, borderColor: googleConectado ? 'var(--success)' : undefined }}>
-        {Icon.warn({ className: 'ic' })}
-        <div>
-          {googleConectado ? (
-            <>
-              Google Agenda conectado: um horário só é oferecido ao candidato se estiver dentro da janela da vaga, <b>livre na sua Google Agenda</b>{' '}
-              e <b>não estiver bloqueado manualmente</b> aqui embaixo.
-            </>
-          ) : (
-            <>
-              A integração com o Google Agenda (prmaquino92@gmail.com) ainda não foi autorizada — conecte em{' '}
-              <a href="/app/integracoes">Integrações</a> para que os horários oferecidos ao candidato cruzem com sua agenda real e cada entrevista
-              já crie o evento com Google Meet automaticamente.
-            </>
-          )}
+    <Layout active="agenda" crumb="Recrutamento" title="Agenda de entrevistas" usuario={usuario}>
+      {souAdmin ? (
+        <div className="note" style={{ marginBottom: 18, borderColor: googleConectado ? 'var(--success)' : undefined }}>
+          {Icon.warn({ className: 'ic' })}
+          <div>
+            {googleConectado ? (
+              <>
+                Google Agenda conectado: um horário só é oferecido ao candidato se estiver dentro da janela da vaga, <b>livre na sua Google Agenda</b>{' '}
+                e <b>não estiver bloqueado manualmente</b> aqui embaixo.
+              </>
+            ) : (
+              <>
+                A integração com o Google Agenda (prmaquino92@gmail.com) ainda não foi autorizada — conecte em{' '}
+                <a href="/app/integracoes">Integrações</a> para que os horários oferecidos ao candidato cruzem com sua agenda real e cada entrevista
+                já crie o evento com Google Meet automaticamente.
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {/* Visão rápida de horários livres (hoje, amanhã e depois de amanhã) — janela comercial
           padrão 09:00–17:30, cruzando com entrevistas já marcadas, bloqueios manuais e, se
           conectado, a sua Google Agenda. Não depende de nenhuma vaga específica (cada vaga pode
           ter uma janela diferente) — é só uma referência rápida pra responder "que horário você
-          tem livre" sem precisar abrir a Google Agenda. */}
-      <div className="card" style={{ marginBottom: 18 }}>
-        <div className="card-pad">
-          <div
-            style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-faint)', fontWeight: 700, marginBottom: 10 }}
-          >
-            Horários livres (09:00–17:30)
-          </div>
-          <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
-            {horariosLivres.map((d, i) => (
-              <div key={d.iso} style={{ minWidth: 170 }}>
-                <div style={{ fontSize: 12.8, fontWeight: 700, marginBottom: 6 }}>
-                  {i === 0 ? 'Hoje' : i === 1 ? 'Amanhã' : DIA_SEMANA_LABEL[d.weekday]} · {d.label}
-                </div>
-                {d.livres.length ? (
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {d.livres.map((h) => (
-                      <span key={h} className="pill pill-info">
-                        {h}
-                      </span>
-                    ))}
+          tem livre" sem precisar abrir a Google Agenda. É a SUA agenda pessoal (Pedro/admin) —
+          não faz sentido mostrar pro gerente, que não tem Google Agenda conectada aqui. */}
+      {souAdmin ? (
+        <div className="card" style={{ marginBottom: 18 }}>
+          <div className="card-pad">
+            <div
+              style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-faint)', fontWeight: 700, marginBottom: 10 }}
+            >
+              Horários livres (09:00–17:30)
+            </div>
+            <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
+              {horariosLivres.map((d, i) => (
+                <div key={d.iso} style={{ minWidth: 170 }}>
+                  <div style={{ fontSize: 12.8, fontWeight: 700, marginBottom: 6 }}>
+                    {i === 0 ? 'Hoje' : i === 1 ? 'Amanhã' : DIA_SEMANA_LABEL[d.weekday]} · {d.label}
                   </div>
-                ) : (
-                  <div className="hint">Nenhum horário livre</div>
-                )}
-              </div>
-            ))}
+                  {d.livres.length ? (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {d.livres.map((h) => (
+                        <span key={h} className="pill pill-info">
+                          {h}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="hint">Nenhum horário livre</div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      ) : null}
 
-      <div className="grid grid-4">
+      <div className={`grid ${souAdmin ? 'grid-4' : 'grid-2'}`}>
         <div className="stat">
           <div className="label">Entrevistas pendentes</div>
           <div className="value num">{futuras.length}</div>
@@ -432,18 +438,22 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
           <div className="value num">{futuras.filter((e) => isProximos7(e.data)).length}</div>
           <div className="sub">A partir de hoje</div>
         </div>
-        <div className="stat">
-          <div className="label">Bloqueios ativos</div>
-          <div className="value num">{bloqueios.length}</div>
-          <div className="sub">Horários indisponíveis por sua escolha</div>
-        </div>
-        <div className="stat">
-          <div className="label">Responsável</div>
-          <div className="value" style={{ fontSize: 15 }}>
-            Pedro Aquino
-          </div>
-          <div className="sub">prmaquino92@gmail.com</div>
-        </div>
+        {souAdmin ? (
+          <>
+            <div className="stat">
+              <div className="label">Bloqueios ativos</div>
+              <div className="value num">{bloqueios.length}</div>
+              <div className="sub">Horários indisponíveis por sua escolha</div>
+            </div>
+            <div className="stat">
+              <div className="label">Responsável</div>
+              <div className="value" style={{ fontSize: 15 }}>
+                Pedro Aquino
+              </div>
+              <div className="sub">prmaquino92@gmail.com</div>
+            </div>
+          </>
+        ) : null}
       </div>
 
       {erro ? (
@@ -489,6 +499,8 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
         unidadeById={unidadeById}
       />
 
+      {souAdmin ? (
+        <>
       <div className="section-head">
         <h2>Bloqueios manuais</h2>
         <p>Horários indisponíveis mesmo que estejam livres na agenda — valem para todas as vagas</p>
@@ -591,6 +603,8 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
           </table>
         </div>
       </div>
+        </>
+      ) : null}
     </Layout>
   );
 }
@@ -645,25 +659,33 @@ async function calcularHorariosLivres(entrevistas, bloqueios, googleConectado) {
 }
 
 export async function getServerSideProps(context) {
-  const redirect = requireAuth(context);
-  if (redirect) return redirect;
-  const [entrevistas, bloqueios, google, pessoas, unidades] = await Promise.all([
+  const { usuario, redirect } = await requireUsuario(context);
+  if (!usuario) return { redirect };
+  const [entrevistasTodas, bloqueios, google, pessoas, unidades] = await Promise.all([
     getEntrevistasAgendadas(),
     getBloqueios(),
     getGoogleStatus(),
     getPessoas(),
     getUnidades(),
   ]);
-  const horariosLivres = await calcularHorariosLivres(entrevistas, bloqueios, google.conectado);
+  let entrevistas = entrevistasTodas;
+  if (usuario.tipo === 'gerente') {
+    const vagaIds = await getVagaIdsDoGerente(usuario.pessoaId);
+    entrevistas = entrevistasTodas.filter((e) => e.vaga_id && vagaIds.includes(e.vaga_id));
+  }
+  // "Horários livres" e bloqueios manuais refletem a SUA Google Agenda pessoal — não fazem
+  // sentido pro gerente (não é a agenda dele) e, por isso, nem são calculados pra ele.
+  const horariosLivres = usuario.tipo === 'admin' ? await calcularHorariosLivres(entrevistas, bloqueios, google.conectado) : [];
   return {
     props: {
       entrevistas,
-      bloqueios,
+      bloqueios: usuario.tipo === 'admin' ? bloqueios : [],
       googleConectado: google.conectado,
       pessoas,
       unidades,
       horariosLivres,
       erro: context.query.erro === '1',
+      usuario,
     },
   };
 }

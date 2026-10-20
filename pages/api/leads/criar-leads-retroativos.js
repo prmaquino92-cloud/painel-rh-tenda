@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../lib/supabase';
-import { isAuthenticated } from '../../../lib/auth';
+import { carregarUsuario } from '../../../lib/sessaoUsuario';
 import { getLeads } from '../../../lib/data';
 
 // Correção pontual (2026-10-15): quase todo candidato no painel (88 de 89, nessa data) não tem
@@ -40,7 +40,8 @@ function localidadeDoCedente(c) {
 }
 
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario || usuario.tipo !== 'admin') {
     res.status(401).end();
     return;
   }

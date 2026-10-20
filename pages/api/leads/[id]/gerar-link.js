@@ -1,9 +1,10 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 import { gerarToken } from '../../../../lib/domain';
 
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -24,6 +25,11 @@ export default async function handler(req, res) {
 
   const vagaFinal = vaga_id || lead.vaga_id;
   if (!vagaFinal) {
+    res.writeHead(302, { Location: '/app/leads?erro=1' });
+    res.end();
+    return;
+  }
+  if (!(await usuarioPodeAgirNaVaga(usuario, lead.vaga_id)) || !(await usuarioPodeAgirNaVaga(usuario, vagaFinal))) {
     res.writeHead(302, { Location: '/app/leads?erro=1' });
     res.end();
     return;

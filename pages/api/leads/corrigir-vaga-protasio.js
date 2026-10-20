@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../lib/supabase';
-import { isAuthenticated } from '../../../lib/auth';
+import { carregarUsuario } from '../../../lib/sessaoUsuario';
 import { getLeads, getVagas } from '../../../lib/data';
 
 // Correção pontual (2026-10-15): a importação de uma planilha grande do Pandapé trouxe
@@ -10,7 +10,8 @@ import { getLeads, getVagas } from '../../../lib/data';
 // "convertido") — esse(s) caso(s) ficam listados pra revisão manual, porque a correção ali
 // envolve o registro de candidato também, não só o lead.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario || usuario.tipo !== 'admin') {
     res.status(401).end();
     return;
   }

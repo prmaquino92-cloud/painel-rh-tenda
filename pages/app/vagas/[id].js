@@ -1,15 +1,15 @@
 import { useState } from 'react';
 import Layout from '../../../components/Layout';
-import { requireAuth } from '../../../lib/auth';
+import { requireUsuario, bloquearSeNaoForAdmin } from '../../../lib/sessaoUsuario';
 import { getVaga, getUnidades, getPessoas } from '../../../lib/data';
 import { DIA_SEMANA_LABEL, PAPEL_LABEL } from '../../../lib/domain';
 
-export default function VagaDetalhe({ vaga, unidadeNome, unidades, gerentes, baseUrl, erro }) {
+export default function VagaDetalhe({ vaga, unidadeNome, unidades, gerentes, baseUrl, erro, usuario }) {
   const [editando, setEditando] = useState(false);
 
   if (!vaga) {
     return (
-      <Layout active="vagas" crumb="Cadastros únicos" title="Vaga não encontrada">
+      <Layout active="vagas" crumb="Cadastros únicos" title="Vaga não encontrada" usuario={usuario}>
         <div className="empty">Essa vaga não existe mais.</div>
       </Layout>
     );
@@ -18,7 +18,7 @@ export default function VagaDetalhe({ vaga, unidadeNome, unidades, gerentes, bas
   const dias = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 
   return (
-    <Layout active="vagas" crumb="Cadastros únicos" title={vaga.titulo}>
+    <Layout active="vagas" crumb="Cadastros únicos" title={vaga.titulo} usuario={usuario}>
       {erro ? (
         <div className="note" style={{ marginBottom: 16 }}>
           Não foi possível salvar. Confira o nome da vaga e tente de novo.
@@ -180,8 +180,10 @@ export default function VagaDetalhe({ vaga, unidadeNome, unidades, gerentes, bas
 }
 
 export async function getServerSideProps(context) {
-  const redirect = requireAuth(context);
-  if (redirect) return redirect;
+  const { usuario, redirect } = await requireUsuario(context);
+  if (!usuario) return { redirect };
+  const bloqueio = bloquearSeNaoForAdmin(usuario);
+  if (bloqueio) return bloqueio;
   const vaga = await getVaga(context.params.id);
   const unidades = await getUnidades();
   const pessoas = await getPessoas();
@@ -196,6 +198,7 @@ export async function getServerSideProps(context) {
       gerentes: pessoas.filter((p) => p.papel === 'gerente_comercial' || p.papel === 'coordenador'),
       baseUrl,
       erro: context.query.erro === '1',
+      usuario,
     },
   };
 }

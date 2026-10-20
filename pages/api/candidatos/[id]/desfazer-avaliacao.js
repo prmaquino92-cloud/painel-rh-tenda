@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 import { cancelarEvento } from '../../../../lib/google';
 
 // Desfaz uma avaliação feita por engano (ex.: confundiu dois candidatos e escreveu o parecer/
@@ -10,7 +10,8 @@ import { cancelarEvento } from '../../../../lib/google';
 // evento no Google Agenda se houver, limpa o parecer e volta o candidato pra "Entrevistado" —
 // pronto pra avaliar de novo, certo dessa vez.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -21,9 +22,13 @@ export default async function handler(req, res) {
   const { id } = req.query;
   const sb = supabaseAdmin();
 
-  const { data: candidato, error: errC } = await sb.from('candidatos').select('id,status').eq('id', id).maybeSingle();
+  const { data: candidato, error: errC } = await sb.from('candidatos').select('id,status,vaga_id').eq('id', id).maybeSingle();
   if (errC || !candidato) {
     res.status(404).send('Candidato não encontrado.');
+    return;
+  }
+  if (!(await usuarioPodeAgirNaVaga(usuario, candidato.vaga_id))) {
+    res.status(403).send('Sem permissão.');
     return;
   }
   if (candidato.status !== 'segunda_entrevista_agendada') {

@@ -1,11 +1,11 @@
 import Layout from '../../components/Layout';
-import { requireAuth } from '../../lib/auth';
+import { requireUsuario, bloquearSeNaoForAdmin } from '../../lib/sessaoUsuario';
 import { getGoogleStatus } from '../../lib/google';
 import { Icon } from '../../components/icons';
 
-export default function Integracoes({ google, conectado, erro }) {
+export default function Integracoes({ google, conectado, erro, usuario }) {
   return (
-    <Layout active="integracoes" crumb="Configuração" title="Integrações">
+    <Layout active="integracoes" crumb="Configuração" title="Integrações" usuario={usuario}>
       <p style={{ fontSize: 12.8, color: 'var(--ink-soft)', maxWidth: 560, marginBottom: 16 }}>
         Canais que alimentam o painel.
       </p>
@@ -104,14 +104,17 @@ export default function Integracoes({ google, conectado, erro }) {
 }
 
 export async function getServerSideProps(context) {
-  const redirect = requireAuth(context);
-  if (redirect) return redirect;
+  const { usuario, redirect } = await requireUsuario(context);
+  if (!usuario) return { redirect };
+  const bloqueio = bloquearSeNaoForAdmin(usuario);
+  if (bloqueio) return bloqueio;
   const google = await getGoogleStatus();
   return {
     props: {
       google,
       conectado: context.query.conectado === '1',
       erro: context.query.erro === '1',
+      usuario,
     },
   };
 }

@@ -1,17 +1,17 @@
 import { useState } from 'react';
 import Layout from '../../components/Layout';
-import { requireAuth } from '../../lib/auth';
+import { requireUsuario, bloquearSeNaoForAdmin } from '../../lib/sessaoUsuario';
 import { getLinks, getPessoas, getUnidades } from '../../lib/data';
 import { PAPEL_LABEL, PAPEL_ORDEM } from '../../lib/domain';
 import { Icon } from '../../components/icons';
 
-export default function Links({ links, pessoas, unidades, baseUrl }) {
+export default function Links({ links, pessoas, unidades, baseUrl, usuario }) {
   const [showForm, setShowForm] = useState(false);
   const pessoaNome = (id) => pessoas.find((p) => p.id === id)?.nome || '—';
   const unidadeNome = (id) => unidades.find((u) => u.id === id)?.nome || 'Toda a operação';
 
   return (
-    <Layout active="links" crumb="Configuração" title="Links de cadastro">
+    <Layout active="links" crumb="Configuração" title="Links de cadastro" usuario={usuario}>
       <div className="toolbar" style={{ justifyContent: 'space-between' }}>
         <p style={{ fontSize: 12.8, color: 'var(--ink-soft)', maxWidth: 520 }}>
           Gere um link para que o próprio gestor preencha seu cadastro já na posição correta da hierarquia.
@@ -126,10 +126,12 @@ export default function Links({ links, pessoas, unidades, baseUrl }) {
 }
 
 export async function getServerSideProps(context) {
-  const redirect = requireAuth(context);
-  if (redirect) return redirect;
+  const { usuario, redirect } = await requireUsuario(context);
+  if (!usuario) return { redirect };
+  const bloqueio = bloquearSeNaoForAdmin(usuario);
+  if (bloqueio) return bloqueio;
   const [links, pessoas, unidades] = await Promise.all([getLinks(), getPessoas(), getUnidades()]);
   const proto = context.req.headers['x-forwarded-proto'] || 'https';
   const baseUrl = `${proto}://${context.req.headers.host}`;
-  return { props: { links, pessoas, unidades, baseUrl } };
+  return { props: { links, pessoas, unidades, baseUrl, usuario } };
 }

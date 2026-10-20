@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 
 // Marcar a entrevista como "realizada" aqui na Agenda só mexia na própria entrevista — o
 // candidato continuava com status "Entrevista agendada" na tela de Candidatos pra sempre, até
@@ -11,7 +11,8 @@ import { isAuthenticated } from '../../../../lib/auth';
 // A 2ª rodada não mexe no status do candidato: ele continua em "2ª entrevista agendada" até o
 // gerente (ou o RH, na falta dele) decidir — isso já é tratado à parte na tela de Candidatos.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -22,7 +23,12 @@ export default async function handler(req, res) {
   const { id } = req.query;
   const sb = supabaseAdmin();
 
-  const { data: entrevista } = await sb.from('entrevistas').select('rodada, candidato_id').eq('id', id).maybeSingle();
+  const { data: entrevista } = await sb.from('entrevistas').select('rodada, candidato_id, vaga_id').eq('id', id).maybeSingle();
+  if (!entrevista || !(await usuarioPodeAgirNaVaga(usuario, entrevista.vaga_id))) {
+    res.writeHead(302, { Location: '/app/agenda?erro=1' });
+    res.end();
+    return;
+  }
 
   const { error } = await sb.from('entrevistas').update({ status: 'realizada' }).eq('id', id);
   if (error) {

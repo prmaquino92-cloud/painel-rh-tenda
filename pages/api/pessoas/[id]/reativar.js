@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario } from '../../../../lib/sessaoUsuario';
 
 // Reativa uma pessoa desligada (recontratação). Propositalmente NÃO limpa desligado_em nem
 // motivo_desligamento — esse par vira um registro histórico do desligamento mais recente, pra
@@ -7,7 +7,8 @@ import { isAuthenticated } from '../../../../lib/auth';
 // pessoa for desligada de novo no futuro, esses dois campos são sobrescritos com a nova data e
 // o novo motivo em /api/pessoas/[id]/desligar.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario || usuario.tipo !== 'admin') {
     res.status(401).end();
     return;
   }

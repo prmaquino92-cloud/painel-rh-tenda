@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../lib/supabase';
-import { isAuthenticated } from '../../../lib/auth';
+import { carregarUsuario } from '../../../lib/sessaoUsuario';
 import { getLeads } from '../../../lib/data';
 
 // Marca como "Em tratamento" os leads que o Pedro já confirmou ter tido conversa real no
@@ -88,7 +88,8 @@ CONTATOS_WHATSAPP.forEach((c) => {
 const STATUS_NAO_MEXE = new Set(['convertido', 'declinado']);
 
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario || usuario.tipo !== 'admin') {
     res.status(401).end();
     return;
   }

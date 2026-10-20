@@ -1,12 +1,13 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario } from '../../../../lib/sessaoUsuario';
 
 // Marca uma pessoa (qualquer papel) como desligada, com data e motivo — fica registrado de
 // forma permanente em pessoas.desligado_em/motivo_desligamento, usado pro turnover nos
 // Relatórios. Importante: NÃO mexe em candidatos.status — quem já foi contratado continua
 // contando como contratação mesmo depois de desligado, só deixa de aparecer como corretor ativo.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario || usuario.tipo !== 'admin') {
     res.status(401).end();
     return;
   }

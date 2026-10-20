@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
-import { requireAuth } from '../../lib/auth';
+import { requireUsuario, getVagaIdsDoGerente } from '../../lib/sessaoUsuario';
 import { getLeads, getVagas, getLeadEventosRecentes, getCandidatosComEntrevista } from '../../lib/data';
 import { STATUS_LEAD, STATUS_CANDIDATO, ORIGEM_LABEL, ORIGEM_ORDEM, MOTIVOS_DECLINIO_LEAD, initials, fmtData } from '../../lib/domain';
 import { Icon } from '../../components/icons';
@@ -1081,8 +1081,9 @@ function TimelineLead({ eventos }) {
   );
 }
 
-export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro }) {
+export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro, usuario }) {
   const router = useRouter();
+  const souAdmin = usuario.tipo === 'admin';
   const [showForm, setShowForm] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showLimpar, setShowLimpar] = useState(false);
@@ -1233,7 +1234,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   }));
 
   return (
-    <Layout active="leads" crumb="Recrutamento" title="Leads">
+    <Layout active="leads" crumb="Recrutamento" title="Leads" usuario={usuario}>
       {erro ? (
         <div className="note" style={{ marginBottom: 16 }}>
           Não foi possível concluir a ação. Confira os dados e tente de novo.
@@ -1245,43 +1246,47 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
           Etapa anterior ao formulário de candidatura — trate o contato aqui e só depois envie o link para agendar a entrevista.
         </p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <a className="btn btn-outline btn-sm" href="/api/leads/modelo">
-            {Icon.link({ className: 'ic' })} Baixar modelo (.xlsx)
-          </a>
-          <button className="btn btn-outline" onClick={() => setShowImport((v) => !v)}>
-            {Icon.plus({ className: 'ic' })} Importar planilha
-          </button>
-          <button className="btn btn-outline" onClick={() => setShowLimpar((v) => !v)}>
-            {Icon.plus({ className: 'ic' })} Remover duplicados
-          </button>
-          <button className="btn btn-outline" onClick={() => setShowLimparIncompletos((v) => !v)}>
-            {Icon.plus({ className: 'ic' })} Manter só completos
-          </button>
-          <button className="btn btn-outline" onClick={() => setShowRevisar((v) => !v)}>
-            {Icon.plus({ className: 'ic' })} Verificar já evoluídos
-          </button>
-          <button className="btn btn-outline" onClick={() => setShowContatosWhatsapp((v) => !v)}>
-            {Icon.plus({ className: 'ic' })} Marcar contatados no WhatsApp
-          </button>
-          <button className="btn btn-outline" onClick={() => setShowAtualizarCandidatos((v) => !v)}>
-            {Icon.plus({ className: 'ic' })} Atualizar candidatos (origem/localidade)
-          </button>
-          <button className="btn btn-outline" onClick={() => setShowAtualizarLeads((v) => !v)}>
-            {Icon.plus({ className: 'ic' })} Atualizar leads (origem)
-          </button>
+          {souAdmin ? (
+            <>
+              <a className="btn btn-outline btn-sm" href="/api/leads/modelo">
+                {Icon.link({ className: 'ic' })} Baixar modelo (.xlsx)
+              </a>
+              <button className="btn btn-outline" onClick={() => setShowImport((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Importar planilha
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowLimpar((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Remover duplicados
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowLimparIncompletos((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Manter só completos
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowRevisar((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Verificar já evoluídos
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowContatosWhatsapp((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Marcar contatados no WhatsApp
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowAtualizarCandidatos((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Atualizar candidatos (origem/localidade)
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowAtualizarLeads((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Atualizar leads (origem)
+              </button>
+            </>
+          ) : null}
           <button className="btn btn-primary" onClick={() => setShowForm((v) => !v)}>
             {Icon.plus({ className: 'ic' })} Cadastrar lead
           </button>
         </div>
       </div>
 
-      {showImport ? <ImportarLeads /> : null}
-      {showLimpar ? <LimparDuplicados /> : null}
-      {showLimparIncompletos ? <LimparIncompletos /> : null}
-      {showRevisar ? <RevisarEvoluidos /> : null}
-      {showContatosWhatsapp ? <MarcarContatadosWhatsapp /> : null}
-      {showAtualizarCandidatos ? <AtualizarCandidatosOrigem /> : null}
-      {showAtualizarLeads ? <AtualizarLeadsOrigem /> : null}
+      {souAdmin && showImport ? <ImportarLeads /> : null}
+      {souAdmin && showLimpar ? <LimparDuplicados /> : null}
+      {souAdmin && showLimparIncompletos ? <LimparIncompletos /> : null}
+      {souAdmin && showRevisar ? <RevisarEvoluidos /> : null}
+      {souAdmin && showContatosWhatsapp ? <MarcarContatadosWhatsapp /> : null}
+      {souAdmin && showAtualizarCandidatos ? <AtualizarCandidatosOrigem /> : null}
+      {souAdmin && showAtualizarLeads ? <AtualizarLeadsOrigem /> : null}
 
       {showForm ? (
         <div className="card form-card" style={{ marginTop: 16 }}>
@@ -1307,15 +1312,16 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                   <input type="text" name="localidade" placeholder="Cidade - UF" />
                 </div>
                 <div className="field">
-                  <label>Vaga de interesse (opcional)</label>
-                  <select name="vaga_id" defaultValue="">
-                    <option value="">Ainda não sei</option>
+                  <label>{souAdmin ? 'Vaga de interesse (opcional)' : 'Vaga de interesse'}</label>
+                  <select name="vaga_id" defaultValue="" required={!souAdmin}>
+                    {souAdmin ? <option value="">Ainda não sei</option> : <option value="" disabled>Selecione uma vaga sua</option>}
                     {vagas.map((v) => (
                       <option key={v.id} value={v.id}>
                         {v.titulo}
                       </option>
                     ))}
                   </select>
+                  {!souAdmin ? <p className="hint">Como gerente, o lead precisa já estar vinculado a uma das suas vagas.</p> : null}
                 </div>
               </div>
               <div className="field">
@@ -1737,15 +1743,25 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
 }
 
 export async function getServerSideProps(context) {
-  const redirect = requireAuth(context);
-  if (redirect) return redirect;
-  const [leads, vagas, eventos, candidatos] = await Promise.all([
+  const { usuario, redirect } = await requireUsuario(context);
+  if (!usuario) return { redirect };
+  let [leads, vagas, eventos, candidatos] = await Promise.all([
     getLeads(),
     getVagas(),
     getLeadEventosRecentes(90),
     getCandidatosComEntrevista(),
   ]);
+  // Gerente só vê leads das vagas em que é responsável — um lead ainda sem vaga definida não é
+  // "da equipe" de ninguém, então fica de fora pra ele (continua visível pro admin).
+  if (usuario.tipo === 'gerente') {
+    const vagaIds = await getVagaIdsDoGerente(usuario.pessoaId);
+    leads = leads.filter((l) => l.vaga_id && vagaIds.includes(l.vaga_id));
+    vagas = vagas.filter((v) => vagaIds.includes(v.id));
+    candidatos = candidatos.filter((c) => c.vaga_id && vagaIds.includes(c.vaga_id));
+    const leadIds = new Set(leads.map((l) => l.id));
+    eventos = eventos.filter((e) => leadIds.has(e.lead_id));
+  }
   const proto = context.req.headers['x-forwarded-proto'] || 'https';
   const baseUrl = `${proto}://${context.req.headers.host}`;
-  return { props: { leads, vagas, eventos, candidatos, baseUrl, erro: context.query.erro === '1' } };
+  return { props: { leads, vagas, eventos, candidatos, baseUrl, erro: context.query.erro === '1', usuario } };
 }

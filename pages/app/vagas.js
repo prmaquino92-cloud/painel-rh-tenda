@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Layout from '../../components/Layout';
-import { requireAuth } from '../../lib/auth';
+import { requireUsuario, bloquearSeNaoForAdmin } from '../../lib/sessaoUsuario';
 import { getVagas, getUnidades, getPessoas, getCandidatosComEntrevista } from '../../lib/data';
 import { Icon } from '../../components/icons';
 import { PAPEL_LABEL } from '../../lib/domain';
 
-export default function Vagas({ vagas, unidades, pessoas, candidatos, baseUrl }) {
+export default function Vagas({ vagas, unidades, pessoas, candidatos, baseUrl, usuario }) {
   const [showForm, setShowForm] = useState(false);
   const unidadeNome = (id) => unidades.find((u) => u.id === id)?.nome || '—';
   const pessoaNome = (id) => pessoas.find((p) => p.id === id)?.nome || '—';
@@ -17,7 +17,7 @@ export default function Vagas({ vagas, unidades, pessoas, candidatos, baseUrl })
   const linkGeral = `${baseUrl}/p/candidatura/geral`;
 
   return (
-    <Layout active="vagas" crumb="Cadastros únicos" title="Vagas">
+    <Layout active="vagas" crumb="Cadastros únicos" title="Vagas" usuario={usuario}>
       <div className="toolbar" style={{ justifyContent: 'space-between' }}>
         <p style={{ fontSize: 12.8, color: 'var(--ink-soft)', maxWidth: 520 }}>
           Cada vaga já traz a configuração de candidatura e de agendamento — sem precisar de um painel separado.
@@ -210,10 +210,12 @@ export default function Vagas({ vagas, unidades, pessoas, candidatos, baseUrl })
 }
 
 export async function getServerSideProps(context) {
-  const redirect = requireAuth(context);
-  if (redirect) return redirect;
+  const { usuario, redirect } = await requireUsuario(context);
+  if (!usuario) return { redirect };
+  const bloqueio = bloquearSeNaoForAdmin(usuario);
+  if (bloqueio) return bloqueio;
   const [vagas, unidades, pessoas, candidatos] = await Promise.all([getVagas(), getUnidades(), getPessoas(), getCandidatosComEntrevista()]);
   const proto = context.req.headers['x-forwarded-proto'] || 'https';
   const baseUrl = `${proto}://${context.req.headers.host}`;
-  return { props: { vagas, unidades, pessoas, candidatos, baseUrl } };
+  return { props: { vagas, unidades, pessoas, candidatos, baseUrl, usuario } };
 }

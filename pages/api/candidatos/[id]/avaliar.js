@@ -1,10 +1,11 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 import { gerarToken } from '../../../../lib/domain';
 import { criarEventoPresencial } from '../../../../lib/google';
 
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -24,6 +25,11 @@ export default async function handler(req, res) {
   const sb = supabaseAdmin();
   const { data: candidato, error: errC } = await sb.from('candidatos').select('*').eq('id', id).maybeSingle();
   if (errC || !candidato) {
+    res.writeHead(302, { Location: '/app/candidatos?erro=1' });
+    res.end();
+    return;
+  }
+  if (!(await usuarioPodeAgirNaVaga(usuario, candidato.vaga_id))) {
     res.writeHead(302, { Location: '/app/candidatos?erro=1' });
     res.end();
     return;

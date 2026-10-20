@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 import { cancelarEvento } from '../../../../lib/google';
 
 // Usado pelo botão "Descartar" da Agenda, especificamente sobre entrevistas marcadas como
@@ -9,7 +9,8 @@ import { cancelarEvento } from '../../../../lib/google';
 // Google Agenda, se houver), marca o candidato como reprovado/declinado — ele sai da fila de
 // "aguardando avaliação" e some dos relatórios de pipeline em aberto.
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -22,9 +23,14 @@ export default async function handler(req, res) {
 
   const { data: entrevista } = await sb
     .from('entrevistas')
-    .select('google_event_id, candidato_id')
+    .select('google_event_id, candidato_id, vaga_id')
     .eq('id', id)
     .maybeSingle();
+  if (!entrevista || !(await usuarioPodeAgirNaVaga(usuario, entrevista.vaga_id))) {
+    res.writeHead(302, { Location: '/app/agenda?erro=1' });
+    res.end();
+    return;
+  }
 
   const { error } = await sb.from('entrevistas').update({ status: 'cancelada' }).eq('id', id);
   if (error) {

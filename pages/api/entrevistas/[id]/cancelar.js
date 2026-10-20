@@ -1,12 +1,13 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 import { cancelarEvento } from '../../../../lib/google';
 
 // Cancela uma entrevista: marca status='cancelada' e, se ela tinha evento no Google Agenda
 // (Meet ou presencial), remove o evento também (melhor esforço — se o Google não estiver
 // conectado ou o evento já não existir, a entrevista é cancelada no painel do mesmo jeito).
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -17,7 +18,12 @@ export default async function handler(req, res) {
   const { id } = req.query;
   const sb = supabaseAdmin();
 
-  const { data: entrevista } = await sb.from('entrevistas').select('google_event_id').eq('id', id).maybeSingle();
+  const { data: entrevista } = await sb.from('entrevistas').select('google_event_id, vaga_id').eq('id', id).maybeSingle();
+  if (!entrevista || !(await usuarioPodeAgirNaVaga(usuario, entrevista.vaga_id))) {
+    res.writeHead(302, { Location: '/app/agenda?erro=1' });
+    res.end();
+    return;
+  }
 
   const { error } = await sb.from('entrevistas').update({ status: 'cancelada' }).eq('id', id);
   if (error) {

@@ -1,10 +1,11 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
-import { isAuthenticated } from '../../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 
 const PERMITIDOS = ['novo', 'em_tratamento', 'sem_contato', 'declinado'];
 
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -23,6 +24,11 @@ export default async function handler(req, res) {
   const sb = supabaseAdmin();
   const { data: lead, error: errL } = await sb.from('leads').select('*').eq('id', id).maybeSingle();
   if (errL || !lead) {
+    res.writeHead(302, { Location: '/app/leads?erro=1' });
+    res.end();
+    return;
+  }
+  if (!(await usuarioPodeAgirNaVaga(usuario, lead.vaga_id))) {
     res.writeHead(302, { Location: '/app/leads?erro=1' });
     res.end();
     return;

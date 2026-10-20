@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../lib/supabase';
-import { isAuthenticated } from '../../../lib/auth';
+import { carregarUsuario } from '../../../lib/sessaoUsuario';
 import { getLeads } from '../../../lib/data';
 import { MOTIVOS_DECLINIO_LEAD } from '../../../lib/domain';
 
@@ -21,7 +21,8 @@ function normTelefone(s) {
 // MOTIVOS_DECLINIO_LEAD (padrão: "Telefone ou e-mail inválido"). Nunca mexe em quem já está
 // "declinado" nem em quem já "convertido" (virou candidatura).
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario || usuario.tipo !== 'admin') {
     res.status(401).end();
     return;
   }

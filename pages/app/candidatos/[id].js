@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Layout from '../../../components/Layout';
-import { requireAuth } from '../../../lib/auth';
+import { requireUsuario, getVagaIdsDoGerente } from '../../../lib/sessaoUsuario';
 import { getCandidato, getVaga, getVagas, getPessoas, getUnidades } from '../../../lib/data';
 import { STATUS_CANDIDATO, FEEDBACK_DECISAO, ORIGEM_LABEL, initials, fmtData } from '../../../lib/domain';
 import { AvaliarForm, DefinirEquipeForm, VagaForm, ReagendarRodada2Form } from '../../../components/CandidatoForms';
 
-export default function FichaCandidato({ candidato, vaga, vagas, gerentes, gerentesComerciais, unidades, pessoaCorretor, superior, erro }) {
+export default function FichaCandidato({ candidato, vaga, vagas, gerentes, gerentesComerciais, unidades, pessoaCorretor, superior, erro, usuario }) {
   const [avaliando, setAvaliando] = useState(false);
   const [definindoEquipe, setDefinindoEquipe] = useState(false);
   const [definindoVaga, setDefinindoVaga] = useState(false);
@@ -14,7 +14,7 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, geren
 
   if (!candidato) {
     return (
-      <Layout active="candidatos" crumb="Recrutamento" title="Candidato não encontrado">
+      <Layout active="candidatos" crumb="Recrutamento" title="Candidato não encontrado" usuario={usuario}>
         <div className="card">
           <div className="card-pad">
             <p>Esse candidato não existe (ou foi removido). </p>
@@ -50,7 +50,7 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, geren
     (candidato.status === 'aprovado' || candidato.status === 'declinado' || candidato.status === 'contratado');
 
   return (
-    <Layout active="candidatos" crumb="Recrutamento" title={candidato.nome}>
+    <Layout active="candidatos" crumb="Recrutamento" title={candidato.nome} usuario={usuario}>
       <Link href="/app/candidatos" style={{ fontSize: 12.8, color: 'var(--ink-faint)' }}>
         ← Voltar para Candidatos
       </Link>
@@ -366,12 +366,21 @@ function unidadeNome(unidades, id) {
 }
 
 export async function getServerSideProps(context) {
-  const redirect = requireAuth(context);
-  if (redirect) return redirect;
+  const { usuario, redirect } = await requireUsuario(context);
+  if (!usuario) return { redirect };
   const { id } = context.params;
   const [candidato, pessoas, unidades, vagas] = await Promise.all([getCandidato(id), getPessoas(), getUnidades(), getVagas()]);
   if (!candidato) {
-    return { props: { candidato: null, erro: context.query.erro === '1' } };
+    return { props: { candidato: null, erro: context.query.erro === '1', usuario } };
+  }
+  // Acesso direto pela URL a um candidato de outra equipe é bloqueado aqui, não só escondido da
+  // lista — sem isso, um gerente adivinhando/copiando o id de um candidato que não é dele
+  // conseguiria ver a ficha completa mesmo sem aparecer em /app/candidatos.
+  if (usuario.tipo === 'gerente') {
+    const vagaIds = await getVagaIdsDoGerente(usuario.pessoaId);
+    if (!candidato.vaga_id || !vagaIds.includes(candidato.vaga_id)) {
+      return { redirect: { destination: '/app/candidatos', permanent: false } };
+    }
   }
   const vaga = candidato.vaga_id ? await getVaga(candidato.vaga_id) : null;
   // Mesmo critério de candidatos.js: quem conduz a entrevista pode ser gerente comercial ou
@@ -392,6 +401,7 @@ export async function getServerSideProps(context) {
       pessoaCorretor,
       superior,
       erro: context.query.erro === '1',
+      usuario,
     },
   };
 }

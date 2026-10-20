@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../lib/supabase';
-import { isAuthenticated } from '../../../lib/auth';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../lib/sessaoUsuario';
 import { ORIGEM_ORDEM } from '../../../lib/domain';
 import { criarEventoComMeet } from '../../../lib/google';
 
@@ -9,7 +9,8 @@ import { criarEventoComMeet } from '../../../lib/google';
 // acontecer (situacao=agendada, cria o evento com Google Meet) quanto uma que já ocorreu
 // (situacao=realizada, só registra pra você poder avaliar).
 export default async function handler(req, res) {
-  if (!isAuthenticated(req)) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
     res.status(401).end();
     return;
   }
@@ -20,6 +21,12 @@ export default async function handler(req, res) {
   const { nome, telefone, email, cidade, estado, vaga_id, origem, situacao, data, hora } = req.body || {};
 
   if (!nome || !nome.trim() || !data || !hora || !ORIGEM_ORDEM.includes(origem) || !['agendada', 'realizada'].includes(situacao)) {
+    res.writeHead(302, { Location: '/app/candidatos?erro=1' });
+    res.end();
+    return;
+  }
+  // Mesma regra de leads/index.js: gerente só cadastra candidato já vinculado a uma vaga dele.
+  if (!(await usuarioPodeAgirNaVaga(usuario, vaga_id || null))) {
     res.writeHead(302, { Location: '/app/candidatos?erro=1' });
     res.end();
     return;
