@@ -716,6 +716,15 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
                                   </button>
                                 </div>
                               </div>
+                            ) : c.status === 'aguardando_agenda_2a' ? (
+                              <div>
+                                Aguardando definição de agenda para a 2ª entrevista.
+                                <div style={{ marginTop: 6 }}>
+                                  <button type="button" className="btn btn-outline btn-sm" onClick={() => setAvaliarId(c.id)}>
+                                    Marcar 2ª entrevista agora
+                                  </button>
+                                </div>
+                              </div>
                             ) : null}
                           </div>
                         ) : podeAvaliar ? (
@@ -748,6 +757,8 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
                               ? 'Aguardando 2ª entrevista e feedback do gerente'
                               : c.status === 'declinado'
                               ? 'Candidato descartado'
+                              : c.status === 'aguardando_agenda_2a'
+                              ? 'Aguardando você definir gerente/data da 2ª entrevista'
                               : c.status === 'aguardando_rh'
                               ? 'Aguardando sua decisão (RH)'
                               : c.status === 'aguardando_candidato'

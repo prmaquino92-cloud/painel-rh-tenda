@@ -34,6 +34,17 @@ export function AvaliarForm({ candidato, gerentes, unidades, unidadeSugeridaId, 
             <input
               type="radio"
               name="decisao"
+              value="aguardando_agenda"
+              checked={decisao === 'aguardando_agenda'}
+              onChange={() => setDecisao('aguardando_agenda')}
+              style={radioStyle}
+            />
+            Aguardando definição de agenda para 2ª entrevista (ainda não sei gerente/data)
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 400 }}>
+            <input
+              type="radio"
+              name="decisao"
               value="declinar"
               checked={decisao === 'declinar'}
               onChange={() => setDecisao('declinar')}

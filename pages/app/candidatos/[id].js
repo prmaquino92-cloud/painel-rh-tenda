@@ -169,6 +169,10 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, geren
             <button className="btn btn-outline btn-sm" type="button" style={{ marginTop: 12 }} onClick={() => setAvaliando(true)}>
               Registrar avaliação
             </button>
+          ) : candidato.status === 'aguardando_agenda_2a' && !avaliando ? (
+            <button className="btn btn-outline btn-sm" type="button" style={{ marginTop: 12 }} onClick={() => setAvaliando(true)}>
+              Marcar 2ª entrevista agora
+            </button>
           ) : !jaAvaliado && (entrevistaCancelada || entrevistaFaltou) ? (
             <div style={{ marginTop: 12 }}>
               <p className="row-sub" style={{ margin: 0, color: 'var(--danger)' }}>
@@ -197,7 +201,7 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, geren
         </div>
       </div>
 
-      {rodada2 || candidato.status === 'declinado' ? (
+      {rodada2 || candidato.status === 'declinado' || candidato.status === 'aguardando_agenda_2a' ? (
         <>
           <div className="section-head">
             <h2>2ª entrevista (presencial, com o gerente)</h2>
@@ -258,6 +262,11 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, geren
                     ) : null}
                   </div>
                 </>
+              ) : candidato.status === 'aguardando_agenda_2a' ? (
+                <p className="row-sub" style={{ margin: 0 }}>
+                  Você já avaliou a 1ª entrevista — falta só definir o gerente e a data da 2ª. Use o botão "Marcar 2ª entrevista agora"
+                  acima, em "1ª entrevista", quando tiver a agenda.
+                </p>
               ) : (
                 <p className="row-sub" style={{ margin: 0 }}>
                   Candidato descartado após a 1ª entrevista.
@@ -302,6 +311,8 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, geren
                 ? 'Aguardando a 2ª entrevista e o feedback do gerente.'
                 : candidato.status === 'declinado'
                 ? 'Candidato descartado — não avança para contratação.'
+                : candidato.status === 'aguardando_agenda_2a'
+                ? 'Aguardando você definir o gerente e a data da 2ª entrevista.'
                 : candidato.status === 'aguardando_rh'
                 ? 'Aguardando sua decisão (RH) — veja o feedback do gerente acima.'
                 : candidato.status === 'aguardando_candidato'

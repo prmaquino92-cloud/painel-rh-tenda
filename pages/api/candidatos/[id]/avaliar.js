@@ -16,7 +16,7 @@ export default async function handler(req, res) {
   const { id } = req.query;
   const { parecer, decisao, gerente_id, unidade_id, data, hora } = req.body || {};
 
-  if (decisao !== 'segunda_entrevista' && decisao !== 'declinar' && decisao !== 'aprovado_direto') {
+  if (decisao !== 'segunda_entrevista' && decisao !== 'declinar' && decisao !== 'aprovado_direto' && decisao !== 'aguardando_agenda') {
     res.writeHead(302, { Location: '/app/candidatos?erro=1' });
     res.end();
     return;
@@ -39,6 +39,25 @@ export default async function handler(req, res) {
     const { error } = await sb
       .from('candidatos')
       .update({ parecer: parecer || null, status: 'declinado', atualizado_em: new Date().toISOString() })
+      .eq('id', id);
+    if (error) {
+      res.status(500).send(error.message);
+      return;
+    }
+    res.writeHead(302, { Location: '/app/candidatos' });
+    res.end();
+    return;
+  }
+
+  // decisao === 'aguardando_agenda' — já avaliou a 1ª entrevista e quer marcar a 2ª, mas ainda
+  // não sabe com qual gerente/unidade/data (precisa confirmar agenda antes). Salva o parecer e
+  // deixa o candidato visível numa etapa própria, sem travar esperando a 2ª entrevista ter os
+  // campos obrigatórios preenchidos — quando a agenda estiver definida, volta em "Registrar
+  // avaliação"/"Marcar 2ª entrevista agora" e escolhe "Marcar 2ª entrevista presencial" normal.
+  if (decisao === 'aguardando_agenda') {
+    const { error } = await sb
+      .from('candidatos')
+      .update({ parecer: parecer || null, status: 'aguardando_agenda_2a', atualizado_em: new Date().toISOString() })
       .eq('id', id);
     if (error) {
       res.status(500).send(error.message);
