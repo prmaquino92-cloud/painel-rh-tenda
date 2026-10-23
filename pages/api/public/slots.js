@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../lib/supabase';
-import { diasUteisDisponiveis, gerarHorarios, isSlotBloqueado, hhmmToMin, agoraSaoPaulo } from '../../../lib/domain';
+import { diasUteisDisponiveis, gerarHorarios, isSlotBloqueado, hhmmToMin, agoraSaoPaulo, dentroJanelaPrimeiraEntrevista } from '../../../lib/domain';
 import { getBusyIntervals } from '../../../lib/google';
 
 // candidato não pode marcar um horário daqui a poucos minutos — exige pelo menos 1h de antecedência
@@ -24,10 +24,12 @@ export default async function handler(req, res) {
     db.from('entrevistas').select('data,hora'),
   ]);
 
-  const diasSemanaVaga = vaga.agenda?.diasSemana || [1, 2, 3, 4, 5];
-  // toda a janela da vaga (não só as primeiras horas) — o grid de horários na tela do
-  // candidato já quebra linha sozinho, então oferecer o dia inteiro não estoura o layout.
-  const horarios = gerarHorarios(vaga.agenda?.inicio || '09:00', vaga.agenda?.fim || '17:30');
+  // sábado/domingo nunca entram, mesmo que uma vaga antiga tenha ficado configurada com esses
+  // dias — a 1ª entrevista é sempre com você, e sua agenda fecha fim de semana.
+  const diasSemanaVaga = (vaga.agenda?.diasSemana || [1, 2, 3, 4, 5]).filter((d) => d >= 1 && d <= 5);
+  // dentro do início/fim configurados na vaga, mas nunca fora da sua janela real (manhã e tarde,
+  // com o almoço fechado) — uma vaga pode encurtar essa janela, mas nunca alargar.
+  const horarios = gerarHorarios(vaga.agenda?.inicio || '09:00', vaga.agenda?.fim || '17:30').filter(dentroJanelaPrimeiraEntrevista);
 
   const agora = agoraSaoPaulo();
   const hojeIso = agora.toISOString().slice(0, 10);

@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '../../../lib/supabase';
-import { diasUteisDisponiveis, gerarHorarios, isSlotBloqueado, hhmmToMin, agoraSaoPaulo } from '../../../lib/domain';
+import { diasUteisDisponiveis, gerarHorarios, isSlotBloqueado, hhmmToMin, agoraSaoPaulo, dentroJanelaPrimeiraEntrevista } from '../../../lib/domain';
 import { getBusyIntervals } from '../../../lib/google';
 
 // Versão do /api/public/slots que não depende de nenhuma vaga — usada pelo link genérico de
@@ -21,7 +21,7 @@ export default async function handler(req, res) {
     db.from('entrevistas').select('data,hora'),
   ]);
 
-  const horarios = gerarHorarios('09:00', '17:30');
+  const horarios = gerarHorarios('09:00', '17:30').filter(dentroJanelaPrimeiraEntrevista);
 
   const agora = agoraSaoPaulo();
   const hojeIso = agora.toISOString().slice(0, 10);

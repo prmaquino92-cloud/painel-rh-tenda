@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
 import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 import { gerarToken } from '../../../../lib/domain';
-import { criarEventoPresencial } from '../../../../lib/google';
+import { criarEventoPresencial, temConflitoNaAgenda } from '../../../../lib/google';
 
 // Reabre um candidato já descartado ("declinado") que voltou a ter chance — ex.: reapareceu e
 // pediu uma nova conversa com o gerente. Marca uma nova 2ª entrevista presencial e volta o
@@ -24,6 +24,15 @@ export default async function handler(req, res) {
   const { gerente_id, unidade_id, data, hora } = req.body || {};
   if (!gerente_id || !unidade_id || !data || !hora) {
     res.writeHead(302, { Location: '/app/candidatos?erro=1' });
+    res.end();
+    return;
+  }
+
+  // mesma conferência de /api/candidatos/[id]/avaliar.js — essa 2ª entrevista é com o gerente e
+  // o candidato, não com você, mas o evento vai na sua agenda e não pode bater em cima de um
+  // compromisso seu de verdade.
+  if (await temConflitoNaAgenda(data, hora, 30)) {
+    res.writeHead(302, { Location: '/app/candidatos?erro=conflito_agenda' });
     res.end();
     return;
   }

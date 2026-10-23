@@ -387,7 +387,9 @@ export default function Candidatos({ candidatos, vagas, pessoas, unidades, baseU
       </div>
       {erro ? (
         <div className="note" style={{ marginTop: 12 }}>
-          Não foi possível salvar. Confira os campos obrigatórios e tente de novo.
+          {erro === 'conflito_agenda'
+            ? 'Não foi possível marcar: esse horário já está ocupado na sua Google Agenda. Escolha outro dia/horário para a 2ª entrevista.'
+            : 'Não foi possível salvar. Confira os campos obrigatórios e tente de novo.'}
         </div>
       ) : null}
       {semRetornoGerente.length > 0 ? (
@@ -825,5 +827,5 @@ export async function getServerSideProps(context) {
   }
   const proto = context.req.headers['x-forwarded-proto'] || 'https';
   const baseUrl = `${proto}://${context.req.headers.host}`;
-  return { props: { candidatos, vagas, pessoas, unidades, baseUrl, erro: context.query.erro === '1', usuario } };
+  return { props: { candidatos, vagas, pessoas, unidades, baseUrl, erro: context.query.erro || null, usuario } };
 }

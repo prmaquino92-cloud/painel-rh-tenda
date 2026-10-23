@@ -13,6 +13,7 @@ import {
   isSlotBloqueado,
   hhmmToMin,
   agoraSaoPaulo,
+  dentroJanelaPrimeiraEntrevista,
 } from '../../lib/domain';
 import { Icon } from '../../components/icons';
 
@@ -389,19 +390,20 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
         </div>
       ) : null}
 
-      {/* Visão rápida de horários livres (hoje, amanhã e depois de amanhã) — janela comercial
-          padrão 09:00–17:30, cruzando com entrevistas já marcadas, bloqueios manuais e, se
-          conectado, a sua Google Agenda. Não depende de nenhuma vaga específica (cada vaga pode
-          ter uma janela diferente) — é só uma referência rápida pra responder "que horário você
-          tem livre" sem precisar abrir a Google Agenda. É a SUA agenda pessoal (Pedro/admin) —
-          não faz sentido mostrar pro gerente, que não tem Google Agenda conectada aqui. */}
+      {/* Visão rápida de horários livres (próximos 3 dias úteis) — janela real da 1ª entrevista
+          (sempre com você): seg a sex, 09:00–11:30 e 13:30–17:30, nunca sábado/domingo/feriado,
+          cruzando com entrevistas já marcadas, bloqueios manuais e, se conectado, a sua Google
+          Agenda. Não depende de nenhuma vaga específica (cada vaga pode encurtar essa janela,
+          nunca alargar) — é só uma referência rápida pra responder "que horário você tem livre"
+          sem precisar abrir a Google Agenda. É a SUA agenda pessoal (Pedro/admin) — não faz
+          sentido mostrar pro gerente, que não tem Google Agenda conectada aqui. */}
       {souAdmin ? (
         <div className="card" style={{ marginBottom: 18 }}>
           <div className="card-pad">
             <div
               style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-faint)', fontWeight: 700, marginBottom: 10 }}
             >
-              Horários livres (09:00–17:30)
+              Horários livres (09:00–11:30 e 13:30–17:30)
             </div>
             <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
               {horariosLivres.map((d, i) => (
@@ -610,20 +612,19 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
 }
 
 // Mesma lógica de disponibilidade de /api/public/slots.js (a que o candidato vê pra marcar a
-// entrevista), só que numa janela comercial padrão fixa (não depende de vaga nenhuma) e sempre
-// pros 3 dias corridos a partir de hoje — é uma referência rápida, não um link de agendamento.
+// entrevista), só que numa janela comercial padrão fixa (não depende de vaga nenhuma) — é uma
+// referência rápida, não um link de agendamento. Sua agenda fica sempre fechada sábado, domingo
+// e feriado — por isso são os próximos 3 dias ÚTEIS a partir de hoje, não 3 dias corridos.
 const JANELA_PADRAO_INICIO = '09:00';
 const JANELA_PADRAO_FIM = '17:30';
 const ANTECEDENCIA_MIN = 60; // mesmo valor usado em /api/public/slots.js
 
 async function calcularHorariosLivres(entrevistas, bloqueios, googleConectado) {
-  const horarios = gerarHorarios(JANELA_PADRAO_INICIO, JANELA_PADRAO_FIM);
+  const horarios = gerarHorarios(JANELA_PADRAO_INICIO, JANELA_PADRAO_FIM).filter(dentroJanelaPrimeiraEntrevista);
   const agora = agoraSaoPaulo();
   const hojeIso = agora.toISOString().slice(0, 10);
   const minutosAgora = agora.getUTCHours() * 60 + agora.getUTCMinutes();
-  // todos os dias da semana habilitados (sem filtrar por dia útil) — "hoje, amanhã e depois de
-  // amanhã" é literal, não "os 3 próximos dias úteis".
-  const dias = diasUteisDisponiveis([0, 1, 2, 3, 4, 5, 6], 3, undefined, true);
+  const dias = diasUteisDisponiveis([1, 2, 3, 4, 5], 3, undefined, true);
 
   let busy = [];
   if (googleConectado && dias.length) {

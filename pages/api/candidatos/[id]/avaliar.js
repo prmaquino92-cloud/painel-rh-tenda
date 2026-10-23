@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '../../../../lib/supabase';
 import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
 import { gerarToken } from '../../../../lib/domain';
-import { criarEventoPresencial } from '../../../../lib/google';
+import { criarEventoPresencial, temConflitoNaAgenda } from '../../../../lib/google';
 
 export default async function handler(req, res) {
   const usuario = await carregarUsuario(req);
@@ -113,6 +113,15 @@ export default async function handler(req, res) {
   // decisao === 'segunda_entrevista'
   if (!gerente_id || !unidade_id || !data || !hora) {
     res.writeHead(302, { Location: '/app/candidatos?erro=1' });
+    res.end();
+    return;
+  }
+
+  // 2ª entrevista é com o gerente e o candidato, não com você, mas o evento vai na sua agenda —
+  // não pode cair em cima de um compromisso seu de verdade (eventos de 2ª entrevista já criados
+  // não contam aqui, ver nota em lib/google.js). Pode ser qualquer dia/horário, só não esse.
+  if (await temConflitoNaAgenda(data, hora, 30)) {
+    res.writeHead(302, { Location: '/app/candidatos?erro=conflito_agenda' });
     res.end();
     return;
   }
