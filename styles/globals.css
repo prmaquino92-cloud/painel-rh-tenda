@@ -226,10 +226,22 @@ select,.input{background:var(--surface);border:1px solid var(--border);border-ra
    mais um cabeçalho (.print-header) com a identificação do relatório que só aparece aqui. */
 .print-header{display:none;}
 @media print{
+  /* Paisagem dá bem mais largura pra tabela de "Desempenho por vaga/origem" (9 colunas) caber
+     sem cortar — em retrato ela estoura mesmo com fonte menor. */
+  @page{size:landscape;margin:12mm;}
   .sidebar,.topbar,.sidebar-scrim,.no-print{display:none !important;}
   .main{margin:0;}
   .content{padding:0;max-width:100%;}
   body{background:#fff;}
   .print-header{display:block;margin-bottom:18px;}
   .card,.stat{box-shadow:none;border:1px solid #ccc;}
+  /* .table-wrap rola a tabela na tela (overflow-x:auto) — impresso, isso corta tudo que está
+     fora da parte visível em vez de quebrar página. Deixa a tabela fluir e usa fonte/espaçamento
+     menores pra caber mais colunas por linha. Cabeçalho pode quebrar em 2 linhas (em vez de
+     nowrap) em vez de forçar a coluna a ficar larga. */
+  .table-wrap{overflow:visible;}
+  .table-wrap table{font-size:10.5px;}
+  .table-wrap th{white-space:normal;padding:0 6px 6px;}
+  .table-wrap td{padding:6px;}
+  .table-wrap tr{page-break-inside:avoid;}
 }
