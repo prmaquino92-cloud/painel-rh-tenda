@@ -406,10 +406,10 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
               Horários livres (09:00–11:30 e 13:30–17:30)
             </div>
             <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
-              {horariosLivres.map((d, i) => (
+              {horariosLivres.map((d) => (
                 <div key={d.iso} style={{ minWidth: 170 }}>
                   <div style={{ fontSize: 12.8, fontWeight: 700, marginBottom: 6 }}>
-                    {i === 0 ? 'Hoje' : i === 1 ? 'Amanhã' : DIA_SEMANA_LABEL[d.weekday]} · {d.label}
+                    {d.diffDias === 0 ? 'Hoje' : d.diffDias === 1 ? 'Amanhã' : DIA_SEMANA_LABEL[d.weekday]} · {d.label}
                   </div>
                   {d.livres.length ? (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -655,7 +655,11 @@ async function calcularHorariosLivres(entrevistas, bloqueios, googleConectado) {
       if (googleConectado && ocupadoNoGoogle(d.iso, h)) return false;
       return true;
     });
-    return { iso: d.iso, label: d.label, weekday: d.weekday, livres };
+    // "Hoje"/"Amanhã" têm que refletir a distância real em dias — com fim de semana/feriado
+    // pulados, o 2º dia da lista nem sempre é literalmente amanhã (ex.: hoje é sexta, próximo
+    // dia útil é segunda).
+    const diffDias = Math.round((new Date(`${d.iso}T00:00:00`) - new Date(`${hojeIso}T00:00:00`)) / 86400000);
+    return { iso: d.iso, label: d.label, weekday: d.weekday, diffDias, livres };
   });
 }
 
