@@ -75,9 +75,9 @@ export default function Layout({ active, crumb, title, children, pendentes, usua
         <div className={`sidebar-scrim ${open ? 'open' : ''}`} onClick={() => setOpen(false)} />
         <aside className={`sidebar ${open ? 'open' : ''}`}>
           <div className="sidebar-brand">
-            <div className="brand-mark">TV</div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-tenda-vendas.png" alt="Tenda Vendas" className="brand-logo" />
             <div className="brand-text">
-              <b>Tenda Vendas</b>
               <span>Painel de RH</span>
             </div>
           </div>
