@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import { requireUsuario, getVagaIdsDoGerente } from '../../lib/sessaoUsuario';
 import { getEntrevistasAgendadas, getBloqueios, getPessoas, getUnidades } from '../../lib/data';
+import { supabaseAdmin } from '../../lib/supabase';
 import { getGoogleStatus, getBusyIntervals } from '../../lib/google';
 import {
   DIA_SEMANA_LABEL,
@@ -14,6 +15,7 @@ import {
   hhmmToMin,
   agoraSaoPaulo,
   dentroJanelaPrimeiraEntrevista,
+  gerarToken,
 } from '../../lib/domain';
 import { Icon } from '../../components/icons';
 
@@ -52,6 +54,22 @@ function linkWhatsapp(telefone, nome) {
   const primeiroNome = (nome || '').trim().split(/\s+/)[0] || '';
   const saudacao = primeiroNome ? `Olá ${primeiroNome}` : 'Olá';
   const mensagem = `${saudacao}, tudo bem? Aqui é da Tenda Vendas, passando pra confirmar sua entrevista. Qualquer dúvida me chama por aqui!`;
+  return `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
+}
+
+// Mensagem para quem não compareceu: convida a escolher um novo horário pelo link, aproveitando o
+// cadastro que a pessoa já fez.
+function linkWhatsappReengajamento(telefone, nome, link) {
+  if (!telefone) return null;
+  const digitos = telefone.replace(/\D/g, '');
+  if (!digitos) return null;
+  const comCodigoPais = digitos.startsWith('55') ? digitos : `55${digitos}`;
+  const primeiroNome = (nome || '').trim().split(/\s+/)[0] || '';
+  const saudacao = primeiroNome ? `Olá ${primeiroNome}` : 'Olá';
+  const mensagem =
+    `${saudacao}, tudo bem? Aqui é da Tenda Vendas! Passando para avisar que ainda temos vagas disponíveis nos nossos times. ` +
+    `Você ainda tem interesse em fazer parte do nosso time? Se sim, escolha um novo horário para a sua entrevista pelo link abaixo, ` +
+    `sem precisar preencher o cadastro de novo:\n${link}\n\nQualquer dúvida, é só me chamar por aqui!`;
   return `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
 }
 
@@ -150,7 +168,11 @@ function TabelaEntrevistas({ entrevistas, reagendandoId, setReagendandoId, pesso
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span>{e.candidatos.telefone}</span>
                       <a
-                        href={linkWhatsapp(e.candidatos.telefone, e.candidatos.nome)}
+                        href={
+                          e.status === 'nao_compareceu' && e.link_reagendar
+                            ? linkWhatsappReengajamento(e.candidatos.telefone, e.candidatos.nome, e.link_reagendar)
+                            : linkWhatsapp(e.candidatos.telefone, e.candidatos.nome)
+                        }
                         target="_blank"
                         rel="noreferrer"
                         title="Chamar no WhatsApp"
@@ -361,12 +383,14 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
   const [tipo, setTipo] = useState('pontual');
   const [showRealizadas, setShowRealizadas] = useState(false);
   const [showNaoCompareceu, setShowNaoCompareceu] = useState(false);
+  const [showCanceladas, setShowCanceladas] = useState(false);
   const [reagendandoId, setReagendandoId] = useState(null);
   const pessoaById = (id) => pessoas.find((p) => p.id === id);
   const unidadeById = (id) => unidades.find((u) => u.id === id);
   const futuras = entrevistas.filter(ehFutura);
   const realizadas = entrevistas.filter((e) => e.status === 'realizada');
-  const naoCompareceuCanceladas = entrevistas.filter((e) => e.status === 'cancelada' || e.status === 'nao_compareceu');
+  const naoCompareceu = entrevistas.filter((e) => e.status === 'nao_compareceu');
+  const canceladas = entrevistas.filter((e) => e.status === 'cancelada');
 
   return (
     <Layout active="agenda" crumb="Recrutamento" title="Agenda de entrevistas" usuario={usuario}>
@@ -491,10 +515,21 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
       />
 
       <CaixinhaRecolhivel
-        titulo="Não compareceu / Canceladas"
-        entrevistas={naoCompareceuCanceladas}
+        titulo="Não compareceu"
+        entrevistas={naoCompareceu}
         aberto={showNaoCompareceu}
         onToggle={() => setShowNaoCompareceu((v) => !v)}
+        reagendandoId={reagendandoId}
+        setReagendandoId={setReagendandoId}
+        pessoaById={pessoaById}
+        unidadeById={unidadeById}
+      />
+
+      <CaixinhaRecolhivel
+        titulo="Canceladas"
+        entrevistas={canceladas}
+        aberto={showCanceladas}
+        onToggle={() => setShowCanceladas((v) => !v)}
         reagendandoId={reagendandoId}
         setReagendandoId={setReagendandoId}
         pessoaById={pessoaById}
@@ -663,6 +698,24 @@ async function calcularHorariosLivres(entrevistas, bloqueios, googleConectado) {
   });
 }
 
+// Garante o link de remarcação de quem não compareceu. Entrevistas marcadas como "não compareceu"
+// antes desse recurso não têm token; geramos um agora, uma única vez, para o WhatsApp funcionar.
+async function comLinkDeReagendamento(lista, baseUrl) {
+  const db = supabaseAdmin();
+  for (const e of lista) {
+    if (e.status === 'nao_compareceu' && !e.reagendamento_token) {
+      const token = gerarToken('rmc');
+      await db.from('entrevistas').update({ reagendamento_token: token }).eq('id', e.id);
+      e.reagendamento_token = token;
+    }
+  }
+  return lista.map((e) =>
+    e.status === 'nao_compareceu' && e.reagendamento_token
+      ? { ...e, link_reagendar: `${baseUrl}/p/reagendar/${e.reagendamento_token}` }
+      : e
+  );
+}
+
 export async function getServerSideProps(context) {
   const { usuario, redirect } = await requireUsuario(context);
   if (!usuario) return { redirect };
@@ -678,6 +731,8 @@ export async function getServerSideProps(context) {
     const vagaIds = await getVagaIdsDoGerente(usuario.pessoaId);
     entrevistas = entrevistasTodas.filter((e) => e.vaga_id && vagaIds.includes(e.vaga_id));
   }
+  const baseUrl = `${context.req.headers['x-forwarded-proto'] || 'https'}://${context.req.headers.host}`;
+  entrevistas = await comLinkDeReagendamento(entrevistas, baseUrl);
   // "Horários livres" e bloqueios manuais refletem a SUA Google Agenda pessoal — não fazem
   // sentido pro gerente (não é a agenda dele) e, por isso, nem são calculados pra ele.
   const horariosLivres = usuario.tipo === 'admin' ? await calcularHorariosLivres(entrevistas, bloqueios, google.conectado) : [];

@@ -23,7 +23,11 @@ export default function Reagendar({ entrevista }) {
   useEffect(() => {
     if (step === 2 && entrevista && !dias && !carregandoSlots) {
       setCarregandoSlots(true);
-      fetch(`/api/public/slots?vagaId=${entrevista.vaga_id}`)
+      // Entrevista sem vaga (ex.: candidatura geral) usa a janela padrão, igual ao link geral.
+      const urlHorarios = entrevista.vaga_id
+        ? `/api/public/slots?vagaId=${entrevista.vaga_id}`
+        : '/api/public/slots-geral';
+      fetch(urlHorarios)
         .then((r) => r.json())
         .then((j) => setDias(j.dias || []))
         .catch(() => setErro('Não foi possível carregar os horários disponíveis. Recarregue a página.'))
