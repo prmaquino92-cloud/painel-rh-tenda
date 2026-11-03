@@ -637,7 +637,7 @@ function LimparIncompletos() {
   async function excluir() {
     if (!relatorio) return;
     const ok = window.confirm(
-      `Isso vai excluir ${relatorio.incompletosParaExcluir} lead(s) sem nome, telefone ou e-mail, mantendo ${relatorio.completos} completo(s)${
+      `Isso vai excluir ${relatorio.incompletosParaExcluir} lead(s) sem telefone, mantendo ${relatorio.completos} com telefone${
         relatorio.protegidosIncompletos ? ` e ${relatorio.protegidosIncompletos} incompleto(s) protegido(s) por já terem candidatura` : ''
       }. Essa ação não pode ser desfeita. Confirma?`
     );
@@ -664,8 +664,8 @@ function LimparIncompletos() {
     <div className="card form-card" style={{ marginTop: 16 }}>
       <div className="card-pad">
         <div className="hint" style={{ marginBottom: 10 }}>
-          Mantém só os leads com nome, telefone e e-mail preenchidos — os demais (faltando qualquer um dos três) são excluídos. Leads já
-          convertidos em candidatura nunca são excluídos, mesmo incompletos.
+          Mantém os leads com telefone preenchido, mesmo sem e-mail. Os leads sem telefone são excluídos. Leads já convertidos em
+          candidatura nunca são excluídos.
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className="btn btn-outline btn-sm" type="button" onClick={checar} disabled={checando || excluindo}>
@@ -673,7 +673,7 @@ function LimparIncompletos() {
           </button>
           {relatorio ? (
             <button className="btn btn-primary btn-sm" type="button" onClick={excluir} disabled={excluindo}>
-              {excluindo ? 'Excluindo...' : `Excluir ${relatorio.incompletosParaExcluir} incompleto(s)`}
+              {excluindo ? 'Excluindo...' : `Excluir ${relatorio.incompletosParaExcluir} sem telefone`}
             </button>
           ) : null}
         </div>
@@ -681,7 +681,7 @@ function LimparIncompletos() {
         {relatorio ? (
           <div className="note" style={{ marginTop: 10 }}>
             <div>
-              Total de leads: {relatorio.totalLeads}. Completos (mantidos): {relatorio.completos}. Incompletos a excluir:{' '}
+              Total de leads: {relatorio.totalLeads}. Com telefone (mantidos): {relatorio.completos}. Sem telefone a excluir:{' '}
               {relatorio.incompletosParaExcluir}.
               {relatorio.protegidosIncompletos
                 ? ` ${relatorio.protegidosIncompletos} incompleto(s) protegido(s) por já terem candidatura — não serão excluídos.`
@@ -691,7 +691,7 @@ function LimparIncompletos() {
         ) : null}
         {resultado ? (
           <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
-            {resultado.linhasExcluidas} lead(s) incompleto(s) excluído(s) com sucesso. Recarregue a página pra ver os números
+            {resultado.linhasExcluidas} lead(s) sem telefone excluído(s) com sucesso. Recarregue a página pra ver os números
             atualizados.
           </div>
         ) : null}
@@ -1265,7 +1265,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                 {Icon.plus({ className: 'ic' })} Remover duplicados
               </button>
               <button className="btn btn-outline" onClick={() => setShowLimparIncompletos((v) => !v)}>
-                {Icon.plus({ className: 'ic' })} Manter só completos
+                {Icon.plus({ className: 'ic' })} Manter só com telefone
               </button>
               <button className="btn btn-outline" onClick={() => setShowRevisar((v) => !v)}>
                 {Icon.plus({ className: 'ic' })} Verificar já evoluídos

@@ -2,17 +2,11 @@ import { supabaseAdmin } from '../../../lib/supabase';
 import { carregarUsuario } from '../../../lib/sessaoUsuario';
 import { getLeads } from '../../../lib/data';
 
-// Remove leads incompletos: só mantém quem tem nome, telefone e e-mail preenchidos.
-// Nunca exclui um lead que já virou candidatura (mesmo que esteja com algum campo em
+// Remove leads sem telefone: a prioridade é ter um telefone válido para contato. Quem tem telefone
+// é mantido mesmo sem e-mail. Nunca exclui um lead que já virou candidatura (mesmo que esteja com algum campo em
 // branco) — apagar esses arriscaria perder o vínculo com um processo seletivo real.
-function temNome(l) {
-  return !!(l.nome && l.nome.trim());
-}
 function temTelefoneValido(l) {
   return !!(l.telefone && l.telefone.replace(/\D/g, '').length >= 10);
-}
-function temEmailValido(l) {
-  return !!(l.email && /\S+@\S+\.\S+/.test(l.email.trim()));
 }
 
 export default async function handler(req, res) {
@@ -45,7 +39,7 @@ export default async function handler(req, res) {
   const incompletos = [];
 
   leads.forEach((l) => {
-    if (temNome(l) && temTelefoneValido(l) && temEmailValido(l)) {
+    if (temTelefoneValido(l)) {
       completos.push(l);
       return;
     }
