@@ -3,10 +3,45 @@ import Link from 'next/link';
 import Layout from '../../../components/Layout';
 import { requireUsuario, getVagaIdsDoGerente } from '../../../lib/sessaoUsuario';
 import { getCandidato, getVaga, getVagas, getPessoas, getUnidades } from '../../../lib/data';
+import { supabaseAdmin } from '../../../lib/supabase';
 import { STATUS_CANDIDATO, FEEDBACK_DECISAO, ORIGEM_LABEL, initials, fmtData } from '../../../lib/domain';
 import { AvaliarForm, DefinirEquipeForm, VagaForm, ReagendarRodada2Form } from '../../../components/CandidatoForms';
 
-export default function FichaCandidato({ candidato, vaga, vagas, gerentes, gerentesComerciais, unidades, pessoaCorretor, superior, erro, usuario }) {
+const LABEL_TIPO_CANDIDATO = {
+  cadastro: 'Cadastro',
+  status: 'Mudança de etapa',
+  status_atual: 'Situação registrada',
+  entrevista: 'Entrevista',
+  unificacao: 'Cadastro unificado',
+};
+
+function TimelineCandidato({ eventos }) {
+  if (!eventos || eventos.length === 0) {
+    return <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>Sem eventos registrados ainda.</div>;
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {eventos.map((e) => (
+        <div key={e.id} style={{ fontSize: 12.5, display: 'flex', gap: 10 }}>
+          <span style={{ color: 'var(--ink-faint)', minWidth: 132, flexShrink: 0 }}>
+            {new Date(e.criado_em).toLocaleString('pt-BR')}
+          </span>
+          <span>
+            <b>{LABEL_TIPO_CANDIDATO[e.tipo] || e.tipo}</b>
+            {e.status_anterior && e.status_novo
+              ? ` · ${STATUS_CANDIDATO[e.status_anterior]?.label || e.status_anterior} → ${STATUS_CANDIDATO[e.status_novo]?.label || e.status_novo}`
+              : e.status_novo
+                ? ` · ${STATUS_CANDIDATO[e.status_novo]?.label || e.status_novo}`
+                : ''}
+            {e.observacao ? ` — ${e.observacao}` : ''}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function FichaCandidato({ candidato, vaga, vagas, gerentes, gerentesComerciais, unidades, pessoaCorretor, superior, erro, usuario, eventos }) {
   const [avaliando, setAvaliando] = useState(false);
   const [definindoEquipe, setDefinindoEquipe] = useState(false);
   const [definindoVaga, setDefinindoVaga] = useState(false);
@@ -365,6 +400,15 @@ export default function FichaCandidato({ candidato, vaga, vagas, gerentes, geren
           ) : null}
         </div>
       </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-pad">
+          <div className="row-title" style={{ fontSize: 14, marginBottom: 10 }}>
+            Histórico do candidato
+          </div>
+          <TimelineCandidato eventos={eventos} />
+        </div>
+      </div>
     </Layout>
   );
 }
@@ -393,6 +437,11 @@ export async function getServerSideProps(context) {
       return { redirect: { destination: '/app/candidatos', permanent: false } };
     }
   }
+  const { data: eventos } = await supabaseAdmin()
+    .from('candidato_eventos')
+    .select('*')
+    .eq('candidato_id', id)
+    .order('criado_em', { ascending: false });
   const vaga = candidato.vaga_id ? await getVaga(candidato.vaga_id) : null;
   // Mesmo critério de candidatos.js: quem conduz a entrevista pode ser gerente comercial ou
   // coordenador; a equipe de destino do contratado (DefinirEquipeForm) continua só gerentes
@@ -413,6 +462,7 @@ export async function getServerSideProps(context) {
       superior,
       erro: context.query.erro === '1',
       usuario,
+      eventos: eventos || [],
     },
   };
 }
