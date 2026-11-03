@@ -73,6 +73,31 @@ function linkWhatsappReengajamento(telefone, nome, link) {
   return `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
 }
 
+// Mensagem para entrevista cancelada (candidato segue no processo): mostra que o cadastro continua
+// válido e convida a escolher um novo horário pelo link, sem precisar recomeçar.
+function linkWhatsappCancelada(telefone, nome, link) {
+  if (!telefone) return null;
+  const digitos = telefone.replace(/\D/g, '');
+  if (!digitos) return null;
+  const comCodigoPais = digitos.startsWith('55') ? digitos : `55${digitos}`;
+  const primeiroNome = (nome || '').trim().split(/\s+/)[0] || '';
+  const saudacao = primeiroNome ? `Olá, ${primeiroNome}` : 'Olá';
+  const mensagem =
+    `${saudacao}, tudo bem? Aqui é da Tenda Vendas!\n\n` +
+    `Sua entrevista acabou não acontecendo, mas seu cadastro segue com a gente e o seu perfil continua interessando para as vagas ` +
+    `que estamos preenchendo agora nos nossos times.\n\n` +
+    `Se você ainda tiver interesse em fazer parte do nosso time, é só escolher um horário para uma conversa rápida comigo por Google Meet, ` +
+    `direto por este link, sem precisar preencher nada de novo:\n${link}\n\n` +
+    `Qualquer dúvida, é só me chamar por aqui!`;
+  return `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
+}
+
+// Quem recebe o link de remarcação: quem faltou, ou quem cancelou sem ter sido descartado.
+function podeReagendarPeloLink(e) {
+  if (e.status === 'nao_compareceu') return true;
+  return e.status === 'cancelada' && e.candidatos?.status !== 'declinado' && e.candidatos?.status !== 'contratado';
+}
+
 // Uma entrevista só entra na tabela principal ("ainda vão acontecer") se estiver com status
 // diferente de realizada/cancelada/não compareceu — as outras três vão pras caixinhas
 // separadas abaixo, pra não poluir a lista do que ainda precisa de ação.
@@ -169,9 +194,11 @@ function TabelaEntrevistas({ entrevistas, reagendandoId, setReagendandoId, pesso
                       <span>{e.candidatos.telefone}</span>
                       <a
                         href={
-                          e.status === 'nao_compareceu' && e.link_reagendar
+                          e.link_reagendar && e.status === 'nao_compareceu'
                             ? linkWhatsappReengajamento(e.candidatos.telefone, e.candidatos.nome, e.link_reagendar)
-                            : linkWhatsapp(e.candidatos.telefone, e.candidatos.nome)
+                            : e.link_reagendar && e.status === 'cancelada'
+                              ? linkWhatsappCancelada(e.candidatos.telefone, e.candidatos.nome, e.link_reagendar)
+                              : linkWhatsapp(e.candidatos.telefone, e.candidatos.nome)
                         }
                         target="_blank"
                         rel="noreferrer"
@@ -703,14 +730,14 @@ async function calcularHorariosLivres(entrevistas, bloqueios, googleConectado) {
 async function comLinkDeReagendamento(lista, baseUrl) {
   const db = supabaseAdmin();
   for (const e of lista) {
-    if (e.status === 'nao_compareceu' && !e.reagendamento_token) {
+    if (podeReagendarPeloLink(e) && !e.reagendamento_token) {
       const token = gerarToken('rmc');
       await db.from('entrevistas').update({ reagendamento_token: token }).eq('id', e.id);
       e.reagendamento_token = token;
     }
   }
   return lista.map((e) =>
-    e.status === 'nao_compareceu' && e.reagendamento_token
+    podeReagendarPeloLink(e) && e.reagendamento_token
       ? { ...e, link_reagendar: `${baseUrl}/p/reagendar/${e.reagendamento_token}` }
       : e
   );

@@ -277,7 +277,12 @@ function PublicShell({ titulo, children }) {
 export async function getServerSideProps(context) {
   const { token } = context.params;
   const entrevista = await getEntrevistaByReagendamentoToken(token);
-  if (!entrevista || entrevista.status !== 'nao_compareceu') {
+  const statusCandidato = entrevista?.candidatos?.status;
+  const podeRemarcar =
+    entrevista &&
+    (entrevista.status === 'nao_compareceu' ||
+      (entrevista.status === 'cancelada' && statusCandidato !== 'declinado' && statusCandidato !== 'contratado'));
+  if (!podeRemarcar) {
     return { props: { entrevista: null } };
   }
   return { props: { entrevista } };

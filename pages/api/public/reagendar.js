@@ -20,11 +20,17 @@ export default async function handler(req, res) {
   const db = supabaseAdmin();
   const { data: entrevista, error: errEnt } = await db
     .from('entrevistas')
-    .select('*, vagas(titulo)')
+    .select('*, vagas(titulo), candidatos(status)')
     .eq('reagendamento_token', token)
     .maybeSingle();
 
-  if (errEnt || !entrevista || entrevista.status !== 'nao_compareceu') {
+  // Aceita quem não compareceu ou quem teve a entrevista cancelada (sem ter sido descartado).
+  const statusCandidato = entrevista?.candidatos?.status;
+  const podeRemarcar =
+    entrevista &&
+    (entrevista.status === 'nao_compareceu' ||
+      (entrevista.status === 'cancelada' && statusCandidato !== 'declinado' && statusCandidato !== 'contratado'));
+  if (errEnt || !podeRemarcar) {
     res.status(410).json({ error: 'Esse link de remarcação não é mais válido.' });
     return;
   }
@@ -79,7 +85,9 @@ export default async function handler(req, res) {
   // remarcação já está salva no painel mesmo assim.
   let meetLink = entrevista.meet_link || null;
   try {
-    if (entrevista.google_event_id) {
+    // Entrevista cancelada: o evento antigo já foi removido do Google, então criamos um novo com Meet.
+    const eventoAindaExiste = Boolean(entrevista.google_event_id) && entrevista.status !== 'cancelada';
+    if (eventoAindaExiste) {
       await reagendarEvento({ eventId: entrevista.google_event_id, iso, hora, duracaoMin: 30 });
       await db.from('entrevistas').update({ meet_erro: null }).eq('id', entrevista.id);
     } else {
