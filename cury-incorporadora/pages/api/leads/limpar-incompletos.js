@@ -1,0 +1,92 @@
+import { supabaseAdmin } from '../../../lib/supabase';
+import { carregarUsuario } from '../../../lib/sessaoUsuario';
+import { getLeads } from '../../../lib/data';
+
+// Remove leads sem telefone: a prioridade é ter um telefone válido para contato. Quem tem telefone
+// é mantido mesmo sem e-mail. Nunca exclui um lead que já virou candidatura (mesmo que esteja com algum campo em
+// branco) — apagar esses arriscaria perder o vínculo com um processo seletivo real.
+function temTelefoneValido(l) {
+  return !!(l.telefone && l.telefone.replace(/\D/g, '').length >= 10);
+}
+
+export default async function handler(req, res) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario || usuario.tipo !== 'admin') {
+    res.status(401).end();
+    return;
+  }
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.status(405).end();
+    return;
+  }
+
+  const sb = supabaseAdmin();
+  const leads = await getLeads();
+
+  // leads que já viraram candidatura — protegidos mesmo se incompletos
+  const { data: candidatosComLead, error: errCand } = await sb
+    .from('candidatos')
+    .select('lead_id')
+    .not('lead_id', 'is', null);
+  if (errCand) {
+    res.status(500).json({ error: errCand.message });
+    return;
+  }
+  const leadIdsComCandidatura = new Set((candidatosComLead || []).map((c) => c.lead_id));
+
+  const completos = [];
+  const protegidosIncompletos = [];
+  const incompletos = [];
+
+  leads.forEach((l) => {
+    if (temTelefoneValido(l)) {
+      completos.push(l);
+      return;
+    }
+    if (l.status === 'convertido' || leadIdsComCandidatura.has(l.id)) {
+      protegidosIncompletos.push(l);
+      return;
+    }
+    incompletos.push(l);
+  });
+
+  const idsParaExcluir = incompletos.map((l) => l.id);
+
+  if (req.method === 'GET') {
+    res.status(200).json({
+      modo: 'dry-run',
+      totalLeads: leads.length,
+      completos: completos.length,
+      protegidosIncompletos: protegidosIncompletos.length,
+      incompletosParaExcluir: idsParaExcluir.length,
+      amostraIncompletos: incompletos.slice(0, 20).map((l) => ({
+        id: l.id,
+        nome: l.nome,
+        telefone: l.telefone,
+        email: l.email,
+        status: l.status,
+      })),
+    });
+    return;
+  }
+
+  let excluidos = 0;
+  const LOTE = 200;
+  for (let i = 0; i < idsParaExcluir.length; i += LOTE) {
+    const lote = idsParaExcluir.slice(i, i + LOTE);
+    const { error } = await sb.from('leads').delete().in('id', lote);
+    if (error) {
+      res.status(500).json({ error: error.message, excluidosAntesDoErro: excluidos });
+      return;
+    }
+    excluidos += lote.length;
+  }
+
+  res.status(200).json({
+    modo: 'executado',
+    totalLeads: leads.length,
+    linhasExcluidas: excluidos,
+    linhasMantidas: leads.length - excluidos,
+    protegidosIncompletos: protegidosIncompletos.length,
+  });
+}

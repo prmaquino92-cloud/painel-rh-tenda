@@ -1,0 +1,44 @@
+import { supabaseAdmin } from '../../../../lib/supabase';
+import { carregarUsuario, usuarioPodeAgirNaVaga } from '../../../../lib/sessaoUsuario';
+
+// Fecha a decisão de um candidato que ficou em aberto ("avaliar junto ao RH" ou "aguardar
+// definição do candidato") — o RH bate o martelo aqui.
+export default async function handler(req, res) {
+  const usuario = await carregarUsuario(req);
+  if (!usuario) {
+    res.status(401).end();
+    return;
+  }
+  if (req.method !== 'POST') {
+    res.status(405).end();
+    return;
+  }
+  const { id } = req.query;
+  const { decisao } = req.body || {};
+
+  if (decisao !== 'aprovado' && decisao !== 'declinado') {
+    res.writeHead(302, { Location: '/app/candidatos?erro=1' });
+    res.end();
+    return;
+  }
+
+  const sb = supabaseAdmin();
+  const { data: candidatoAtual } = await sb.from('candidatos').select('vaga_id').eq('id', id).maybeSingle();
+  if (!(await usuarioPodeAgirNaVaga(usuario, candidatoAtual?.vaga_id))) {
+    res.writeHead(302, { Location: '/app/candidatos?erro=1' });
+    res.end();
+    return;
+  }
+
+  const { error } = await sb
+    .from('candidatos')
+    .update({ status: decisao, atualizado_em: new Date().toISOString() })
+    .eq('id', id);
+  if (error) {
+    res.status(500).send(error.message);
+    return;
+  }
+
+  res.writeHead(302, { Location: '/app/candidatos' });
+  res.end();
+}

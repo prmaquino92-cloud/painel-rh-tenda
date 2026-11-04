@@ -1,0 +1,232 @@
+export const STATUS_CANDIDATO = {
+  inscrito: { label: 'Inscrito', cls: 'pill-muted' },
+  entrevista_agendada: { label: 'Entrevista agendada', cls: 'pill-info' },
+  entrevistado: { label: 'Entrevistado', cls: 'pill-warning' },
+  aguardando_agenda_2a: { label: 'Aguardando agenda da 2ª entrevista', cls: 'pill-warning' },
+  segunda_entrevista_agendada: { label: '2ª entrevista agendada', cls: 'pill-info' },
+  aguardando_rh: { label: 'Aguardando avaliação do RH', cls: 'pill-warning' },
+  aguardando_candidato: { label: 'Aguardando decisão do candidato', cls: 'pill-info' },
+  aprovado: { label: 'Aprovado', cls: 'pill-success' },
+  contratado: { label: 'Contratado', cls: 'pill-success' },
+  declinado: { label: 'Reprovado/Declinado', cls: 'pill-danger' },
+};
+
+export const DIA_SEMANA_LABEL = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+
+// De onde o lead/candidato veio — usado pra medir quais canais de captação estão convertendo.
+export const ORIGEM_LABEL = {
+  meta_whatsapp: 'Campanha Meta (WhatsApp)',
+  pandape: 'Pandapé',
+  abordagem_ativa: 'Abordagem ativa',
+  indicacao: 'Indicação',
+  site: 'Link de candidatura (site)',
+  outro: 'Outro',
+};
+export const ORIGEM_ORDEM = ['meta_whatsapp', 'pandape', 'abordagem_ativa', 'indicacao', 'site', 'outro'];
+
+export const STATUS_LEAD = {
+  novo: { label: 'Novo · precisa ser tratado', cls: 'pill-warning' },
+  em_tratamento: { label: 'Em tratamento', cls: 'pill-info' },
+  sem_contato: { label: 'Sem contato', cls: 'pill-muted' },
+  declinado: { label: 'Declinado', cls: 'pill-danger' },
+  convertido: { label: 'Convertido em candidato', cls: 'pill-success' },
+};
+
+// Motivos oferecidos ao declinar um lead — fica registrado no histórico do lead
+// (lead_eventos.observacao) pra entender depois por que cada um saiu do funil.
+export const MOTIVOS_DECLINIO_LEAD = [
+  'Já atua em outra imobiliária/corretora',
+  'Não tem interesse em corretagem de imóveis',
+  'Não atende aos requisitos da vaga',
+  'Localização incompatível',
+  'Não conseguiu contato após várias tentativas',
+  'Telefone ou e-mail inválido',
+  'Desistiu do processo',
+  'Outro',
+];
+
+export function initials(name) {
+  return (name || '')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+}
+
+export function fmtData(iso) {
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+export function hhmmToMin(s) {
+  const [h, m] = s.split(':').map(Number);
+  return h * 60 + m;
+}
+
+function calcularPascoa(ano) {
+  // Algoritmo de Meeus/Jones/Butcher (calendário gregoriano) — devolve a data da Páscoa, usada
+  // como base pros feriados móveis abaixo (Carnaval, Sexta-feira Santa, Corpus Christi).
+  const a = ano % 19;
+  const b = Math.floor(ano / 100);
+  const c = ano % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31);
+  const dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(ano, mes - 1, dia));
+}
+
+function isoMaisDias(data, dias) {
+  const d = new Date(data);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+// Feriados nacionais (fixos + móveis, calculados a partir da Páscoa) — usados pra fechar a
+// agenda da 1ª entrevista (sempre com você) nesses dias, além de sábado/domingo. Carnaval não é
+// feriado nacional por lei, mas na prática ninguém agenda entrevista nesses dois dias, então
+// entra na lista também. Não cobre feriado municipal/estadual (ex.: só de uma cidade ou
+// de outra região) — se precisar fechar algum desses também, é só avisar.
+export function ehFeriadoNacional(iso) {
+  const ano = Number(iso.slice(0, 4));
+  const pascoa = calcularPascoa(ano);
+  const moveis = [
+    isoMaisDias(pascoa, -48), // Carnaval (segunda)
+    isoMaisDias(pascoa, -47), // Carnaval (terça)
+    isoMaisDias(pascoa, -2), // Sexta-feira Santa
+    isoMaisDias(pascoa, 60), // Corpus Christi
+  ];
+  const fixos = [
+    `${ano}-01-01`, // Confraternização Universal
+    `${ano}-04-21`, // Tiradentes
+    `${ano}-05-01`, // Dia do Trabalho
+    `${ano}-09-07`, // Independência
+    `${ano}-10-12`, // Nossa Senhora Aparecida
+    `${ano}-11-02`, // Finados
+    `${ano}-11-15`, // Proclamação da República
+    `${ano}-11-20`, // Consciência Negra
+    `${ano}-12-25`, // Natal
+  ];
+  return fixos.includes(iso) || moveis.includes(iso);
+}
+
+// Janela real em que você está disponível pra 1ª entrevista (é sempre com você, por Meet) —
+// manhã e tarde, com o almoço fechado no meio. Filtro final aplicado sobre qualquer lista de
+// horários gerada, independente do que uma vaga específica configurar em "início"/"fim" — nunca
+// oferece um horário em que você não está realmente disponível.
+export function dentroJanelaPrimeiraEntrevista(hora) {
+  const min = hhmmToMin(hora);
+  return (min >= hhmmToMin('09:00') && min < hhmmToMin('11:30')) || (min >= hhmmToMin('13:30') && min < hhmmToMin('17:30'));
+}
+
+// Data/hora "de parede" em São Paulo, agora. O Brasil não usa mais horário de verão, então o
+// deslocamento de -3h é fixo o ano todo. É um Date cujos métodos UTC (getUTCHours, getUTCDay...)
+// devem ser lidos como se já fossem os campos em horário de Brasília.
+export function agoraSaoPaulo() {
+  return new Date(Date.now() - 3 * 60 * 60 * 1000);
+}
+
+export function diasUteisDisponiveis(diasSemana, count, startIso, incluirHoje) {
+  const dias = [];
+  const cur = startIso ? new Date(`${startIso}T00:00:00`) : agoraSaoPaulo();
+  if (!incluirHoje) cur.setDate(cur.getDate() + 1);
+  let guard = 0;
+  while (dias.length < count && guard < 60) {
+    guard++;
+    const wd = cur.getDay();
+    const iso = cur.toISOString().slice(0, 10);
+    // feriado nacional fecha a agenda da 1ª entrevista igual sábado/domingo, mesmo que a vaga
+    // tenha diasSemana incluindo esse dia da semana.
+    if (diasSemana.includes(wd) && !ehFeriadoNacional(iso)) {
+      dias.push({
+        iso,
+        label: `${String(cur.getDate()).padStart(2, '0')}/${String(cur.getMonth() + 1).padStart(2, '0')}`,
+        weekday: wd,
+      });
+    }
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dias;
+}
+
+export function gerarHorarios(inicio, fim) {
+  const horarios = [];
+  const [h1] = inicio.split(':').map(Number);
+  const [h2] = fim.split(':').map(Number);
+  for (let h = h1; h < h2; h++) {
+    horarios.push(`${String(h).padStart(2, '0')}:00`);
+    horarios.push(`${String(h).padStart(2, '0')}:30`);
+  }
+  return horarios;
+}
+
+// Verifica se um horário está bloqueado manualmente (independe de já estar ocupado por entrevista)
+export function isSlotBloqueado(bloqueios, iso, hora) {
+  const min = hhmmToMin(hora);
+  const wd = new Date(`${iso}T00:00:00`).getDay();
+  return bloqueios.some((b) => {
+    const mesmaData = b.tipo === 'recorrente' ? b.dia_semana === wd : b.data === iso;
+    if (!mesmaData) return false;
+    return min >= hhmmToMin(b.inicio) && min < hhmmToMin(b.fim);
+  });
+}
+
+export function gerarToken(prefix) {
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${(prefix || 'tok').slice(0, 3)}-${rand}`;
+}
+
+// Palavras de complemento de endereço que às vezes ficam coladas bem antes do nome da cidade
+// (ex.: "Rua Flores da Cunha, 497 Casa São Leopoldo - RS.") — removidas do começo da captura de
+// extrairCidadeUf pra não virarem "Casa São Leopoldo".
+const RUIDO_LOCALIDADE = new Set([
+  'Casa', 'Apto', 'Apartamento', 'Ap', 'Bloco', 'Blc', 'Fundos', 'Sobrado', 'Edificio', 'Edifício',
+  'Edif', 'Cond', 'Condominio', 'Condomínio', 'Qd', 'Quadra', 'Lote', 'Sala', 'Loja', 'Km',
+  'Resid', 'Residencial', 'Fracao', 'Fração', 'Terreo', 'Térreo', 'Sl',
+]);
+
+// Extrai só "Cidade - UF" de uma localidade que veio com o endereço completo (rua, número,
+// complemento) emendado na frente — formato típico dos leads importados do Pandapé. Devolve null
+// quando não reconhece o padrão "... Cidade - UF" no fim da string (ex.: localidade que já é só
+// um nome de bairro, sem cidade nenhuma — não tem o que extrair).
+export function extrairCidadeUf(localidade) {
+  const texto = (localidade || '').trim();
+  if (!texto) return null;
+  const m = texto.match(/((?:[A-ZÀ-Ý][\wà-ÿ'.]*\s*)+)-\s*([A-Z]{2})\.?\s*$/);
+  if (!m) return null;
+  const palavras = m[1].trim().split(/\s+/);
+  while (palavras.length > 1 && RUIDO_LOCALIDADE.has(palavras[0])) palavras.shift();
+  const cidade = palavras.join(' ').replace(/[,.]$/, '').trim();
+  return cidade ? `${cidade} - ${m[2]}` : null;
+}
+
+function tituloCaso(s) {
+  return s
+    .toLowerCase()
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+// Melhor valor pra guardar em leads.localidade: "Cidade - UF" quando reconhece o endereço
+// completo; quando já é só um nome de bairro em maiúsculas (a cidade não existe nessa
+// informação, não dá pra inventar), só corrige a capitalização; fora isso devolve como veio.
+export function limparLocalidade(localidade) {
+  const texto = (localidade || '').trim();
+  if (!texto) return null;
+  const cidadeUf = extrairCidadeUf(texto);
+  if (cidadeUf) return cidadeUf;
+  if (texto === texto.toUpperCase() && /[A-ZÀ-Ý]/.test(texto)) return tituloCaso(texto);
+  return texto;
+}
