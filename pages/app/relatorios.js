@@ -13,6 +13,7 @@ import {
   calcularMetricas,
   calcularFunilAgrupado,
   calcularTurnover,
+  contratadosEDesligadosDoMes,
   pct,
   fmtPct,
 } from '../../lib/relatorios';
@@ -256,6 +257,57 @@ function Turnover({ turnover }) {
   );
 }
 
+// Contratados e desligados do mês, com o gestor da equipe de cada pessoa e as datas de
+// contratação e de desligamento. Só o admin vê (dados de toda a operação).
+function ContratadosDesligados({ resultado }) {
+  const linhas = resultado.linhas;
+  return (
+    <>
+      <div className="grid grid-3" style={{ marginBottom: 16 }}>
+        <Tile label="Contratados no mês" value={resultado.totalContratados} />
+        <Tile label="Desligados no mês" value={resultado.totalDesligados} />
+        <Tile label="Pessoas listadas" value={linhas.length} />
+      </div>
+      <div className="card">
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Pessoa</th>
+                <th>Papel</th>
+                <th>Gestor da equipe</th>
+                <th>Contratado em</th>
+                <th>Desligado em</th>
+                <th>Motivo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="empty">
+                    Nenhuma contratação ou desligamento nesse mês.
+                  </td>
+                </tr>
+              ) : (
+                linhas.map((l) => (
+                  <tr key={l.id}>
+                    <td className="row-title">{l.nome}</td>
+                    <td>{PAPEL_LABEL[l.papel] || '—'}</td>
+                    <td>{l.gestorNome || '—'}</td>
+                    <td className="row-sub">{fmtData(l.dataContratacao)}</td>
+                    <td className="row-sub">{fmtData(l.dataDesligamento)}</td>
+                    <td className="row-sub">{l.motivo || '—'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>
+  );
+}
+
 const LEGENDA_PERIODO =
   'leads e candidaturas contados por quando entraram no painel; entrevistados e aprovados, pela data da entrevista; contratados e descartados, por quando o status mudou.';
 
@@ -273,6 +325,7 @@ export default function Relatorios({
   funilTotalEquipe,
   pessoasPorId,
   turnover,
+  contratadosDesligados,
   geradoEm,
   usuario,
 }) {
@@ -409,6 +462,17 @@ export default function Relatorios({
             </div>
           </div>
           <Turnover turnover={turnover} />
+
+          <div className="section-head">
+            <div>
+              <h2>Contratados e desligados do mês</h2>
+              <p>
+                {mesLabel} — quem foi contratado e quem foi desligado, com o gestor da equipe a que a pessoa pertencia e as datas de cada
+                evento.
+              </p>
+            </div>
+          </div>
+          <ContratadosDesligados resultado={contratadosDesligados} />
         </>
       ) : null}
     </Layout>
@@ -511,6 +575,10 @@ export async function getServerSideProps(context) {
   // HTML/JSON da página mesmo quando a seção não é desenhada), nem calcula pra ele.
   const turnover = usuario.tipo === 'admin' ? calcularTurnover({ pessoas, inicio: mesInicio, fim: mesFim }) : null;
 
+  // Contratados e desligados do mês — mesmo motivo do turnover: dados da operação inteira, só admin.
+  const contratadosDesligados =
+    usuario.tipo === 'admin' ? contratadosEDesligadosDoMes({ pessoas, candidatos, inicio: mesInicio, fim: mesFim }) : null;
+
   const geradoEm = `${String(hoje.getUTCDate()).padStart(2, '0')}/${String(hoje.getUTCMonth() + 1).padStart(2, '0')}/${hoje.getUTCFullYear()} às ${String(hoje.getUTCHours()).padStart(2, '0')}:${String(hoje.getUTCMinutes()).padStart(2, '0')}`;
 
   return {
@@ -539,6 +607,7 @@ export async function getServerSideProps(context) {
       funilTotalEquipe: funilEquipe.total,
       pessoasPorId,
       turnover,
+      contratadosDesligados,
       geradoEm,
       usuario,
     },
