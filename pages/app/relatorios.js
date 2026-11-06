@@ -1,5 +1,4 @@
 import Link from 'next/link';
-import { useState } from 'react';
 import Layout from '../../components/Layout';
 import { requireUsuario, getVagaIdsDoGerente } from '../../lib/sessaoUsuario';
 import { getEntrevistasAgendadas, getCandidatosComEntrevista, getLeads, getVagas, getPessoas } from '../../lib/data';
@@ -261,33 +260,13 @@ function Turnover({ turnover }) {
 // Contratados e desligados do mês, com o gestor da equipe de cada pessoa e as datas de
 // contratação e de desligamento. Só o admin vê (dados de toda a operação).
 function ContratadosDesligados({ resultado }) {
-  const [aba, setAba] = useState('contratados');
-  const ehContratados = aba === 'contratados';
-  const contratados = resultado.linhas.filter((l) => l.dataContratacao);
-  const desligados = resultado.linhas.filter((l) => l.dataDesligamento);
-  const linhas = ehContratados ? contratados : desligados;
+  const linhas = resultado.linhas;
   return (
     <>
       <div className="grid grid-3" style={{ marginBottom: 16 }}>
         <Tile label="Contratados no mês" value={resultado.totalContratados} />
         <Tile label="Desligados no mês" value={resultado.totalDesligados} />
-        <Tile label="Pessoas listadas" value={resultado.linhas.length} />
-      </div>
-      <div className="tabs" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
-        <button
-          type="button"
-          className={`btn btn-sm ${ehContratados ? 'btn-primary' : 'btn-ghost'}`}
-          onClick={() => setAba('contratados')}
-        >
-          Contratados ({resultado.totalContratados})
-        </button>
-        <button
-          type="button"
-          className={`btn btn-sm ${ehContratados ? 'btn-ghost' : 'btn-primary'}`}
-          onClick={() => setAba('desligados')}
-        >
-          Desligados ({resultado.totalDesligados})
-        </button>
+        <Tile label="Pessoas listadas" value={linhas.length} />
       </div>
       <div className="card">
         <div className="table-wrap">
@@ -297,15 +276,16 @@ function ContratadosDesligados({ resultado }) {
                 <th>Pessoa</th>
                 <th>Papel</th>
                 <th>Gestor da equipe</th>
-                {ehContratados ? <th>Contratado em</th> : <th>Desligado em</th>}
-                {ehContratados ? null : <th>Motivo</th>}
+                <th>Contratado em</th>
+                <th>Desligado em</th>
+                <th>Motivo</th>
               </tr>
             </thead>
             <tbody>
               {linhas.length === 0 ? (
                 <tr>
-                  <td colSpan={ehContratados ? 4 : 5} className="empty">
-                    {ehContratados ? 'Nenhuma contratação nesse mês.' : 'Nenhum desligamento nesse mês.'}
+                  <td colSpan={6} className="empty">
+                    Nenhuma contratação ou desligamento nesse mês.
                   </td>
                 </tr>
               ) : (
@@ -314,12 +294,9 @@ function ContratadosDesligados({ resultado }) {
                     <td className="row-title">{l.nome}</td>
                     <td>{PAPEL_LABEL[l.papel] || '—'}</td>
                     <td>{l.gestorNome || '—'}</td>
-                    {ehContratados ? (
-                      <td className="row-sub">{fmtData(l.dataContratacao)}</td>
-                    ) : (
-                      <td className="row-sub">{fmtData(l.dataDesligamento)}</td>
-                    )}
-                    {ehContratados ? null : <td className="row-sub">{l.motivo || '—'}</td>}
+                    <td className="row-sub">{fmtData(l.dataContratacao)}</td>
+                    <td className="row-sub">{fmtData(l.dataDesligamento)}</td>
+                    <td className="row-sub">{l.motivo || '—'}</td>
                   </tr>
                 ))
               )}
