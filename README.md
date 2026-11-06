@@ -1,16 +1,20 @@
-# MA Gestão e Consultoria · Página de acesso aos Painéis CRM
+# Painel RH · Tenda Vendas
 
-Página inicial (anterior às páginas iniciais dos painéis) com um link para o Painel CRM de cada empresa atendida.
+App em Next.js 14 (Pages Router) + Supabase, para gestão de hierarquia, unidades, vagas, candidatos e entrevistas.
 
-## Como adicionar ou atualizar uma empresa
+## Variáveis de ambiente (configurar no Vercel)
 
-Edite `lib/empresas.js`: adicione um objeto com `id`, `nome`, `descricao` e `url` (a URL pública da página inicial do painel dessa empresa). Enquanto `url` estiver vazio, o cartão aparece como "Em configuração".
+Veja `.env.example`. Na Vercel: Project Settings → Environment Variables, adicionar as 4 chaves para "Production" (e "Preview"/"Development" se quiser testar branches).
 
-## Rodar localmente
+## Banco de dados
 
-    npm install
-    npm run dev
+O schema já foi criado no Supabase via SQL Editor (`schema.sql`). Row Level Security está ativo em todas as tabelas, sem policies — só a chave `secret` (usada no backend, nunca no navegador) consegue ler/escrever.
 
-## Deploy
+## Rotas públicas (sem login)
 
-Crie um projeto na Vercel a partir deste repositório (sem variáveis de ambiente — a página é estática, só com links).
+- `/p/candidatura/[vagaId]` — formulário de candidatura + agendamento de entrevista (link enviado ao candidato).
+- `/p/cadastro-gestor/[token]` — cadastro de gestor a partir de um link de convite gerado no painel.
+
+## Próxima etapa (não incluída nesta versão)
+
+Integração real com Google Calendar/Meet (hoje o app apenas registra a entrevista no banco; a criação automática do evento/Meet fica documentada em `/app/integracoes`).
