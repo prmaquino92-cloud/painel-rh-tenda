@@ -103,6 +103,16 @@ function linkWhatsapp(telefone, nome, origem, vagaId, baseUrl) {
   return `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
 }
 
+// Um lead pode ter mais de um telefone cadastrado (ex.: "51981087803 / 51999569582"). Separa em
+// uma lista, pra ter um botão de WhatsApp para cada número.
+function telefonesDoLead(telefone) {
+  if (!telefone) return [];
+  return telefone
+    .split(/[\/,;]/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
 function ImportarLeads() {
   const [arquivo, setArquivo] = useState(null);
   const [enviando, setEnviando] = useState(false);
@@ -1582,21 +1592,25 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                       <td className="row-sub">
                         {l.telefone ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <span>{l.telefone}</span>
-                            <a
-                              href={linkWhatsapp(l.telefone, l.nome, l.origem, l.vaga_id, baseUrl)}
-                              target="_blank"
-                              rel="noreferrer"
-                              title={
-                                CARD_DIVULGACAO_POR_ORIGEM[l.origem]
-                                  ? 'Chamar no WhatsApp — o card de divulgação já é copiado automaticamente, é só colar (Ctrl+V) na conversa'
-                                  : 'Chamar no WhatsApp'
-                              }
-                              style={{ display: 'inline-flex' }}
-                              onClick={() => handleCliqueWhatsapp(l)}
-                            >
-                              {Icon.whatsapp({ className: 'ic' })}
-                            </a>
+                            {telefonesDoLead(l.telefone).map((tel, idx) => (
+                              <span key={`${tel}-${idx}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <span>{tel}</span>
+                                <a
+                                  href={linkWhatsapp(tel, l.nome, l.origem, l.vaga_id, baseUrl)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title={
+                                    CARD_DIVULGACAO_POR_ORIGEM[l.origem]
+                                      ? `Chamar ${tel} no WhatsApp — o card de divulgação já é copiado automaticamente, é só colar (Ctrl+V) na conversa`
+                                      : `Chamar ${tel} no WhatsApp`
+                                  }
+                                  style={{ display: 'inline-flex' }}
+                                  onClick={() => handleCliqueWhatsapp(l)}
+                                >
+                                  {Icon.whatsapp({ className: 'ic' })}
+                                </a>
+                              </span>
+                            ))}
                             {l.status !== 'declinado' && l.status !== 'convertido' ? (
                               <button
                                 type="button"
