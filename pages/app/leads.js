@@ -515,6 +515,165 @@ function AtualizarLeadsOrigem() {
   );
 }
 
+function CompletarDadosCadastros() {
+  const [arquivo, setArquivo] = useState(null);
+  const [checando, setChecando] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  const NOMES_CAMPO = {
+    telefone: 'telefone',
+    email: 'e-mail',
+    localidade: 'localidade',
+    bairro: 'bairro',
+    profissao: 'profissão',
+    vaga_id: 'vaga de interesse',
+    cidade: 'cidade',
+    estado: 'estado',
+  };
+
+  function lerArquivoBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function chamarApi(aplicar) {
+    const fileBase64 = await lerArquivoBase64(arquivo);
+    const r = await fetch('/api/leads/completar-dados', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileBase64, aplicar }),
+    });
+    const json = await r.json();
+    return { ok: r.ok, json };
+  }
+
+  async function verificar() {
+    if (!arquivo) {
+      setErro('Selecione um arquivo .xlsx primeiro.');
+      return;
+    }
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const { ok, json } = await chamarApi(false);
+      if (!ok) setErro(json.error || 'Não foi possível verificar a planilha.');
+      else setRelatorio(json);
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function aplicar() {
+    if (!arquivo || !relatorio) return;
+    const total = relatorio.leadsParaCompletar + relatorio.candidatosParaCompletar;
+    const ok = window.confirm(
+      `Isso vai preencher campos vazios de ${total} cadastro(s) (${relatorio.leadsParaCompletar} lead(s) e ${relatorio.candidatosParaCompletar} candidato(s)). Campos já preenchidos não são trocados, e status, nome e origem não mudam. Não dá pra desfazer automaticamente. Confirma?`
+    );
+    if (!ok) return;
+    setAplicando(true);
+    setErro('');
+    try {
+      const { ok: deuCerto, json } = await chamarApi(true);
+      if (!deuCerto) setErro(json.error || 'Não foi possível completar os cadastros.');
+      else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  function resumoCampos(contagemObj) {
+    return Object.entries(contagemObj || {})
+      .map(([campo, qtd]) => `${NOMES_CAMPO[campo] || campo}: ${qtd}`)
+      .join(' · ');
+  }
+
+  const total = relatorio ? relatorio.leadsParaCompletar + relatorio.candidatosParaCompletar : 0;
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Usa a planilha (mesmo modelo de leads) pra completar os cadastros que já existem no painel — leads e candidatos — casando
+          por telefone/e-mail. Só preenche o que está vazio (telefone, e-mail, localidade, bairro, profissão e vaga). Nunca troca o
+          que já está preenchido e nunca mexe em nome, status ou origem.
+        </div>
+        <div className="field-row" style={{ alignItems: 'flex-end' }}>
+          <div className="field" style={{ flex: 1 }}>
+            <label>Planilha (.xlsx, mesmo modelo de leads)</label>
+            <input
+              type="file"
+              accept=".xlsx"
+              onChange={(e) => {
+                setArquivo(e.target.files?.[0] || null);
+                setRelatorio(null);
+                setResultado(null);
+              }}
+            />
+          </div>
+          <button className="btn btn-outline btn-sm" type="button" onClick={verificar} disabled={checando || aplicando}>
+            {checando ? 'Verificando...' : 'Verificar'}
+          </button>
+          {relatorio && total > 0 ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={aplicar} disabled={aplicando}>
+              {aplicando ? 'Completando...' : `Completar ${total} cadastro(s)`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              {relatorio.leadsParaCompletar} lead(s) e {relatorio.candidatosParaCompletar} candidato(s) têm campos vazios que a
+              planilha preenche. {relatorio.linhasSemCorrespondencia} linha(s) não correspondem a nenhum cadastro existente.
+            </div>
+            {relatorio.leadsParaCompletar > 0 ? (
+              <div style={{ marginTop: 6 }}>Leads — {resumoCampos(relatorio.contagemLeads)}</div>
+            ) : null}
+            {relatorio.candidatosParaCompletar > 0 ? (
+              <div style={{ marginTop: 6 }}>Candidatos — {resumoCampos(relatorio.contagemCandidatos)}</div>
+            ) : null}
+            {total > 0 ? (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer' }}>Ver amostra ({relatorio.amostra.length} de {total})</summary>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                  {relatorio.amostra.map((a, idx) => (
+                    <li key={`${a.tipo}-${idx}`}>
+                      "{a.nome}" ({a.tipo}) — preencher: {a.campos.map((c) => NOMES_CAMPO[c] || c).join(', ')}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.leadsCompletados} lead(s) e {resultado.candidatosCompletados} candidato(s) completados.
+            <div style={{ marginTop: 6 }}>Leads — {resumoCampos(resultado.contagemLeads) || 'nenhum campo'}</div>
+            <div style={{ marginTop: 6 }}>Candidatos — {resumoCampos(resultado.contagemCandidatos) || 'nenhum campo'}</div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function LimparDuplicados() {
   const [checando, setChecando] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
@@ -1109,6 +1268,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const [showContatosWhatsapp, setShowContatosWhatsapp] = useState(false);
   const [showAtualizarCandidatos, setShowAtualizarCandidatos] = useState(false);
   const [showAtualizarLeads, setShowAtualizarLeads] = useState(false);
+  const [showCompletarDados, setShowCompletarDados] = useState(false);
   // Feedback, por lead, de se o card de divulgação foi copiado com sucesso pra área de
   // transferência ao clicar no WhatsApp ('ok' | 'falhou') — undefined antes do primeiro clique.
   const [cardCopiadoStatus, setCardCopiadoStatus] = useState({});
@@ -1292,6 +1452,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
               <button className="btn btn-outline" onClick={() => setShowAtualizarLeads((v) => !v)}>
                 {Icon.plus({ className: 'ic' })} Atualizar leads (origem)
               </button>
+              <button className="btn btn-outline" onClick={() => setShowCompletarDados((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Completar dados dos cadastros
+              </button>
             </>
           ) : null}
           <button className="btn btn-primary" onClick={() => setShowForm((v) => !v)}>
@@ -1307,6 +1470,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
       {souAdmin && showContatosWhatsapp ? <MarcarContatadosWhatsapp /> : null}
       {souAdmin && showAtualizarCandidatos ? <AtualizarCandidatosOrigem /> : null}
       {souAdmin && showAtualizarLeads ? <AtualizarLeadsOrigem /> : null}
+      {souAdmin && showCompletarDados ? <CompletarDadosCadastros /> : null}
 
       {showForm ? (
         <div className="card form-card" style={{ marginTop: 16 }}>
