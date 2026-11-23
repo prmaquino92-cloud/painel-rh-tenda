@@ -940,7 +940,7 @@ function MarcarContatadosWhatsapp() {
 function EditarForm({ lead, vagas, onCancel }) {
   return (
     <tr>
-      <td colSpan={9} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+      <td colSpan={10} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
         <form method="POST" action={`/api/leads/${lead.id}/editar`} style={{ padding: '14px 16px' }}>
           <div className="field">
             <label>Nome</label>
@@ -1000,7 +1000,7 @@ function EditarForm({ lead, vagas, onCancel }) {
 function EvoluirForm({ lead, vagas, onCancel }) {
   return (
     <tr>
-      <td colSpan={9} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+      <td colSpan={10} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
         <form method="POST" action={`/api/leads/${lead.id}/gerar-link`} style={{ padding: '14px 16px' }}>
           <div className="field">
             <label>Vaga de interesse</label>
@@ -1037,7 +1037,7 @@ function DeclinarForm({ lead, onCancel }) {
   const outro = motivo === 'Outro';
   return (
     <tr>
-      <td colSpan={9} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+      <td colSpan={10} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
         <form method="POST" action={`/api/leads/${lead.id}/status`} style={{ padding: '14px 16px' }}>
           <input type="hidden" name="status" value="declinado" />
           <div className="field">
@@ -1074,7 +1074,7 @@ function DeclinarForm({ lead, onCancel }) {
 function TimelineLead({ eventos }) {
   return (
     <tr>
-      <td colSpan={9} style={{ background: 'var(--surface-2, #f7f7fa)', padding: '12px 16px' }}>
+      <td colSpan={10} style={{ background: 'var(--surface-2, #f7f7fa)', padding: '12px 16px' }}>
         {eventos.length === 0 ? (
           <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>Sem eventos registrados ainda.</div>
         ) : (
@@ -1267,6 +1267,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             <>
               <a className="btn btn-outline btn-sm" href="/api/leads/modelo">
                 {Icon.link({ className: 'ic' })} Baixar modelo (.xlsx)
+              </a>
+              <a className="btn btn-outline btn-sm" href="/api/leads/exportar" title="Baixa todos os leads do painel em planilha (.xlsx)">
+                {Icon.link({ className: 'ic' })} Exportar planilha
               </a>
               <button className="btn btn-outline" onClick={() => setShowImport((v) => !v)}>
                 {Icon.plus({ className: 'ic' })} Importar planilha
@@ -1562,6 +1565,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                   <th>Origem</th>
                   <th>Vaga</th>
                   <th>Localidade</th>
+                  <th>Bairro</th>
                   <th>Status</th>
                   <th>Cadastro</th>
                   <th />
@@ -1586,6 +1590,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                           <div className="mini-avatar">{initials(l.nome)}</div>
                           <div>
                             <div className="row-title">{l.nome}</div>
+                            {l.profissao ? <div className="row-sub">{l.profissao}</div> : null}
                           </div>
                         </div>
                       </td>
@@ -1658,6 +1663,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                       <td style={{ maxWidth: 110, overflowWrap: 'break-word' }}>{l.vaga_id ? vagaNome(l.vaga_id) : '—'}</td>
                       <td className="row-sub" style={{ maxWidth: 110, overflowWrap: 'break-word' }}>
                         {l.localidade || '—'}
+                      </td>
+                      <td className="row-sub" style={{ maxWidth: 110, overflowWrap: 'break-word' }}>
+                        {l.bairro || '—'}
                       </td>
                       <td>
                         <span className={`pill ${st.cls}`}>

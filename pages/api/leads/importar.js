@@ -33,11 +33,21 @@ function normEmail(s) {
   return (s || '').toString().trim().toLowerCase();
 }
 
+// Lê a primeira coluna preenchida entre os nomes aceitos (o Pandapé e outras planilhas usam
+// nomes diferentes pro mesmo dado — ex.: "Profissão", "Ocupação", "Função" ou "Cargo").
+function lerColuna(linha, nomes) {
+  for (const nome of nomes) {
+    const valor = linha[nome];
+    if (valor !== undefined && valor !== null && String(valor).trim() !== '') return String(valor).trim();
+  }
+  return null;
+}
+
 // Compara o que veio na planilha com o que já está salvo no registro existente (lead ou
 // candidato) e devolve a lista de informações que a planilha tem mas o cadastro ainda não tem —
 // só reporta, nunca altera nada (Pedro só quer saber se falta algo, pra decidir se completa ele
 // mesmo depois).
-function camposFaltantesNoRegistro({ telefone, email, localidade, vagaTitulo, origemBruta }, registro, tipo) {
+function camposFaltantesNoRegistro({ telefone, email, localidade, bairro, profissao, vagaTitulo, origemBruta }, registro, tipo) {
   const faltando = [];
   if (telefone && !registro.telefone) faltando.push('telefone');
   if (email && !registro.email) faltando.push('e-mail');
@@ -45,6 +55,8 @@ function camposFaltantesNoRegistro({ telefone, email, localidade, vagaTitulo, or
     if (localidade && !registro.cidade && !registro.estado) faltando.push('localidade (cidade/estado)');
   } else {
     if (localidade && !registro.localidade) faltando.push('localidade');
+    if (bairro && !registro.bairro) faltando.push('bairro');
+    if (profissao && !registro.profissao) faltando.push('profissão');
   }
   if (vagaTitulo && !registro.vaga_id) faltando.push('vaga de interesse');
   if (origemBruta && !registro.origem) faltando.push('origem');
@@ -174,9 +186,11 @@ export default async function handler(req, res) {
     // A planilha (sobretudo Pandapé) costuma trazer o endereço completo nessa coluna — fica só
     // "Cidade - UF" quando reconhece o padrão, senão guarda como veio (ver lib/domain.js).
     const localidade = limparLocalidade(String(linha['Localidade'] ?? linha['localidade'] ?? '').trim() || null);
+    const bairro = lerColuna(linha, ['Bairro', 'bairro']);
+    const profissao = lerColuna(linha, ['Profissão', 'Profissao', 'profissão', 'Ocupação', 'Ocupacao', 'ocupação', 'Função', 'Funcao', 'Cargo']);
     const vagaTitulo = String(linha['Vaga de interesse'] ?? linha['Vaga'] ?? linha['vaga'] ?? '').trim();
     const origemBruta = String(linha['Origem'] ?? linha['origem'] ?? '').trim();
-    const dadosLinha = { telefone, email, localidade, vagaTitulo, origemBruta };
+    const dadosLinha = { telefone, email, localidade, bairro, profissao, vagaTitulo, origemBruta };
 
     const telNorm = normTelefone(telefone);
     const emailNorm = normEmail(email);
@@ -225,7 +239,7 @@ export default async function handler(req, res) {
       avisos.push(`Linha ${numLinha}: origem "${origemBruta}" não reconhecida — importado como "Outro".`);
     }
 
-    const novoLead = { nome, telefone, email, localidade, vaga_id, origem, status: 'novo' };
+    const novoLead = { nome, telefone, email, localidade, bairro, profissao, vaga_id, origem, status: 'novo' };
     paraInserir.push(novoLead);
 
     // Registra essa linha aceita nos mapas de lead, pra detectar duplicatas das próximas linhas.

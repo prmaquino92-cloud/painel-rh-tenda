@@ -20,10 +20,10 @@ export default async function handler(req, res) {
   const origensParaPlanilha = ORIGEM_ORDEM.filter((o) => o !== 'site');
 
   const wsLeads = XLSX.utils.aoa_to_sheet([
-    ['Nome', 'Telefone', 'E-mail', 'Localidade', 'Vaga de interesse', 'Origem'],
-    ['Maria da Silva', '51999999999', 'maria@email.com', 'Porto Alegre - RS', vagas[0]?.titulo || '', ORIGEM_LABEL[origensParaPlanilha[0]]],
+    ['Nome', 'Telefone', 'E-mail', 'Localidade', 'Bairro', 'Profissão', 'Vaga de interesse', 'Origem'],
+    ['Maria da Silva', '51999999999', 'maria@email.com', 'Porto Alegre - RS', 'Centro', 'Corretora de imóveis', vagas[0]?.titulo || '', ORIGEM_LABEL[origensParaPlanilha[0]]],
   ]);
-  wsLeads['!cols'] = [{ wch: 26 }, { wch: 16 }, { wch: 26 }, { wch: 22 }, { wch: 32 }, { wch: 24 }];
+  wsLeads['!cols'] = [{ wch: 26 }, { wch: 16 }, { wch: 26 }, { wch: 22 }, { wch: 20 }, { wch: 24 }, { wch: 32 }, { wch: 24 }];
   XLSX.utils.book_append_sheet(wb, wsLeads, 'Leads');
 
   const wsVagas = XLSX.utils.aoa_to_sheet([
