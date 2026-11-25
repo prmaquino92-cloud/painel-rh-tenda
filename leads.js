@@ -1,0 +1,2194 @@
+import { useState } from 'react';
+import { useRouter } from 'next/router';
+import Layout from '../../components/Layout';
+import { requireUsuario, getVagaIdsDoGerente } from '../../lib/sessaoUsuario';
+import { getLeads, getVagas, getLeadEventosRecentes, getCandidatosComEntrevista } from '../../lib/data';
+import {
+  STATUS_LEAD,
+  STATUS_CANDIDATO,
+  ORIGEM_LABEL,
+  ORIGEM_ORDEM,
+  MOTIVOS_DECLINIO_LEAD,
+  initials,
+  fmtData,
+  separarLocalidade,
+  classificarLocalidade,
+} from '../../lib/domain';
+import { Icon } from '../../components/icons';
+
+const LABEL_TIPO_EVENTO = {
+  criado: 'Lead cadastrado',
+  status: 'Status alterado',
+  candidatura_recebida: 'Candidatura recebida',
+  editado: 'Dados atualizados',
+};
+
+// Mensagem de abordagem padrão, usada pra todo mundo exceto as origens com mensagem própria
+// listadas em MENSAGEM_ABORDAGEM_POR_ORIGEM logo abaixo.
+function mensagemAbordagemPadrao(primeiroNome) {
+  const saudacao = primeiroNome ? `Olá ${primeiroNome}` : 'Olá';
+  return `${saudacao}, tudo bem? Aqui é da Tenda Vendas! Vi seu cadastro e gostaria de conversar sobre a oportunidade de se tornar um corretor parceiro. Podemos falar agora?`;
+}
+
+// Origens com um texto de abordagem próprio (pedido pelo Pedro) em vez do padrão acima. A
+// função recebe o primeiro nome do lead (pode vir vazio) e devolve a mensagem já pronta.
+const MENSAGEM_ABORDAGEM_POR_ORIGEM = {
+  leads_gerente_rafael: (primeiroNome) => {
+    const saudacao = primeiroNome ? `Oi, ${primeiroNome}, tudo bem?` : 'Oi, tudo bem?';
+    return `${saudacao} Aqui é o Pedro, do RH da Tenda Vendas.\nTô conversando com alguns corretores aqui da região sobre um modelo em que a comissão cai em torno de 10 dias depois do ato — sem esperar a assinatura na Caixa.\nPosso te mandar como funciona? É rapidinho :)`;
+  },
+  // Leads de busca ativa no banco de currículos do Infojobs/Catho (via Pandapé) — a pessoa não
+  // se candidatou a nada na Tenda, então "vi seu cadastro" gera a dúvida "cadastro onde?". Aqui
+  // já deixa claro de onde veio o contato.
+  pandape: (primeiroNome) => {
+    const saudacao = primeiroNome ? `Olá ${primeiroNome}` : 'Olá';
+    return `${saudacao}, tudo bem? Aqui é da Tenda Vendas! Encontrei seu currículo disponível no Infojobs/Catho e, pelo seu perfil, achei que você tem bastante a ver com uma oportunidade que temos aqui pra corretor parceiro. Posso te contar mais?`;
+  },
+};
+
+// Vagas com uma mensagem de abordagem própria (pedido pelo Pedro), com prioridade sobre a
+// mensagem por origem acima — usada quando o lead já tem essa vaga definida (vaga_id), não
+// importa a origem. A função recebe o primeiro nome do lead e a URL base do painel (pra montar
+// o link de candidatura dessa vaga específica) e devolve a mensagem já pronta.
+const MENSAGEM_ABORDAGEM_POR_VAGA = {
+  '0cbd676a-f3a4-41c7-a617-d88903a0a1ba': (primeiroNome, baseUrl) => {
+    const saudacao = primeiroNome ? `Olá, ${primeiroNome}! Tudo bem?` : 'Olá! Tudo bem?';
+    return `${saudacao}
+
+Aqui é do RH da Construtora Tenda. Recebemos sua candidatura pelo InfoJobs para a vaga de Gestor(a) de Produto Imobiliário em Gravataí/RS e gostamos do seu perfil!
+
+Nessa função, você vai acompanhar a operação comercial de um empreendimento e dar suporte aos corretores nos atendimentos, negociações, simulações e fechamentos.
+
+- Comissões pagas em até 10 dias.
+
+Para seguir no processo, preencha o formulário e escolha o melhor horário para sua entrevista com o RH:
+${baseUrl}/p/candidatura/0cbd676a-f3a4-41c7-a617-d88903a0a1ba
+
+Leva só alguns minutos. Qualquer dúvida, é só me chamar por aqui!`;
+  },
+};
+
+// Origens com um card de divulgação (imagem) próprio, pra anexar junto da mensagem de
+// abordagem. O link do WhatsApp só consegue preencher texto — não anexa imagem sozinho — então
+// o botão de chamar no WhatsApp, pra essas origens, primeiro tenta copiar a imagem pra área de
+// transferência, pra bastar colar (Ctrl+V) na conversa depois que ela abrir.
+const CARD_DIVULGACAO_POR_ORIGEM = {
+  leads_gerente_rafael: '/cards/corretores-comissao-10dias.png',
+};
+
+// Copia a imagem do card pra área de transferência (como imagem de verdade, não como link),
+// pra já cair pronta pra colar com Ctrl+V na conversa do WhatsApp. Precisa rodar síncrono dentro
+// do clique (gesto do usuário) pra o navegador permitir escrever na área de transferência.
+// Alguns navegadores não suportam (ex.: Firefox ainda não tem ClipboardItem de imagem) — nesses
+// casos cai pro link manual de baixar o card, que continua funcionando do mesmo jeito.
+async function copiarCardParaClipboard(urlCard) {
+  if (!navigator.clipboard || typeof window.ClipboardItem === 'undefined') {
+    return false;
+  }
+  try {
+    const resposta = await fetch(urlCard);
+    const blob = await resposta.blob();
+    await navigator.clipboard.write([new window.ClipboardItem({ [blob.type]: blob })]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Monta o link "clique para conversar" a partir do telefone cadastrado — assume DDD + número
+// brasileiro e completa com o código do país (55) quando ainda não vem incluso. Já vem com a
+// mensagem de abordagem pronta (nome do lead incluso), pra abrir o WhatsApp direto na
+// conversa com o texto só esperando o "Enviar". A mensagem muda conforme a vaga do lead
+// (prioridade, quando configurada acima) ou, na falta disso, conforme a origem do lead.
+function linkWhatsapp(telefone, nome, origem, vagaId, baseUrl) {
+  if (!telefone) return null;
+  const digitos = telefone.replace(/\D/g, '');
+  if (!digitos) return null;
+  const comCodigoPais = digitos.startsWith('55') ? digitos : `55${digitos}`;
+  const primeiroNome = (nome || '').trim().split(/\s+/)[0] || '';
+  const mensagemPorVaga = vagaId && MENSAGEM_ABORDAGEM_POR_VAGA[vagaId];
+  const mensagem = mensagemPorVaga
+    ? mensagemPorVaga(primeiroNome, baseUrl)
+    : (MENSAGEM_ABORDAGEM_POR_ORIGEM[origem] || mensagemAbordagemPadrao)(primeiroNome);
+  return `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
+}
+
+// Um lead pode ter mais de um telefone cadastrado (ex.: "51981087803 / 51999569582"). Separa em
+// uma lista, pra ter um botão de WhatsApp para cada número.
+function telefonesDoLead(telefone) {
+  if (!telefone) return [];
+  return telefone
+    .split(/[\/,;]/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+function ImportarLeads() {
+  const [arquivo, setArquivo] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  function lerArquivoBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = String(reader.result || '').split(',')[1] || '';
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function enviar() {
+    if (!arquivo) {
+      setErro('Selecione um arquivo .xlsx primeiro.');
+      return;
+    }
+    setEnviando(true);
+    setErro('');
+    setResultado(null);
+    try {
+      const fileBase64 = await lerArquivoBase64(arquivo);
+      const r = await fetch('/api/leads/importar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileBase64 }),
+      });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível importar a planilha.');
+      } else {
+        setResultado(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="field-row" style={{ alignItems: 'flex-end' }}>
+          <div className="field" style={{ flex: 1 }}>
+            <label>Planilha (.xlsx, gerada a partir do modelo)</label>
+            <input type="file" accept=".xlsx" onChange={(e) => setArquivo(e.target.files?.[0] || null)} />
+          </div>
+          <button className="btn btn-primary" type="button" onClick={enviar} disabled={enviando}>
+            {enviando ? 'Importando...' : 'Importar planilha'}
+          </button>
+        </div>
+        <div className="hint">
+          Baixe o modelo primeiro (botão acima), preencha uma linha por lead e envie aqui. Se a coluna "Vaga de interesse" não bater
+          exatamente com o nome de uma vaga ativa, o lead entra do mesmo jeito, só que sem vaga vinculada. O painel confere
+          automaticamente se cada linha já está cadastrada (como lead ou já evoluída pra candidato) pelo telefone ou e-mail, pra não
+          duplicar ninguém nem bagunçar seus relatórios de produção — e, pros que já existem, avisa se falta alguma informação da
+          planilha no cadastro atual (sem alterar nada sozinho).
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            <div>
+              {resultado.inseridos} de {resultado.totalLinhas} linha(s) importada(s) como lead novo. Recarregue a página pra ver na
+              lista.
+            </div>
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+              <li>{resultado.inseridos} novo(s), importado(s) agora.</li>
+              <li>{resultado.jaEramLeads || 0} já estavam cadastrados como lead (ainda não evoluídos) — não duplicados.</li>
+              <li>{resultado.jaEramCandidatos || 0} já tinham evoluído pra candidato — não duplicados.</li>
+              <li>{resultado.duplicadosNaPlanilha || 0} repetido(s) dentro da própria planilha — só o primeiro foi importado.</li>
+              {resultado.registrosComLacuna ? (
+                <li>
+                  <strong>{resultado.registrosComLacuna}</strong> dos já cadastrados estão com alguma informação da planilha faltando
+                  no cadastro atual — veja qual em "Ver detalhes por linha" abaixo.
+                </li>
+              ) : null}
+            </ul>
+            {resultado.avisos?.length ? (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer' }}>Ver detalhes por linha ({resultado.avisos.length})</summary>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                  {resultado.avisos.map((a, i) => (
+                    <li key={i}>{a}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AtualizarCandidatosOrigem() {
+  const [arquivo, setArquivo] = useState(null);
+  const [checando, setChecando] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  function lerArquivoBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function verificar() {
+    if (!arquivo) {
+      setErro('Selecione um arquivo .xlsx primeiro.');
+      return;
+    }
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const fileBase64 = await lerArquivoBase64(arquivo);
+      const r = await fetch('/api/candidatos/atualizar-origem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileBase64, aplicar: false }),
+      });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível verificar a planilha.');
+      } else {
+        setRelatorio(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function aplicar() {
+    if (!arquivo || !relatorio) return;
+    const ok = window.confirm(
+      `Isso vai atualizar origem e/ou localidade de ${relatorio.candidatosParaAtualizar} candidato(s) com os dados da planilha, substituindo o que estiver preenchido hoje para esses campos. Essa ação não pode ser desfeita automaticamente. Confirma?`
+    );
+    if (!ok) return;
+    setAplicando(true);
+    setErro('');
+    try {
+      const fileBase64 = await lerArquivoBase64(arquivo);
+      const r = await fetch('/api/candidatos/atualizar-origem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileBase64, aplicar: true }),
+      });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível atualizar os candidatos.');
+      } else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Usa a mesma planilha de leads (casando por telefone/e-mail) pra corrigir a origem e a localidade dos candidatos que já
+          existem — inclusive agendados, entrevistados, contratados ou declinados. Resolve relatórios como "Conversão por origem"
+          quando o candidato foi criado sem herdar a origem real do lead. Nunca mexe em nome, telefone, e-mail, vaga ou status — só
+          origem e localidade, e só nos campos em que a planilha tiver informação.
+        </div>
+        <div className="field-row" style={{ alignItems: 'flex-end' }}>
+          <div className="field" style={{ flex: 1 }}>
+            <label>Planilha (.xlsx, mesmo modelo de leads)</label>
+            <input
+              type="file"
+              accept=".xlsx"
+              onChange={(e) => {
+                setArquivo(e.target.files?.[0] || null);
+                setRelatorio(null);
+                setResultado(null);
+              }}
+            />
+          </div>
+          <button className="btn btn-outline btn-sm" type="button" onClick={verificar} disabled={checando || aplicando}>
+            {checando ? 'Verificando...' : 'Verificar'}
+          </button>
+          {relatorio && relatorio.candidatosParaAtualizar > 0 ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={aplicar} disabled={aplicando}>
+              {aplicando ? 'Atualizando...' : `Atualizar ${relatorio.candidatosParaAtualizar} candidato(s)`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              {relatorio.candidatosParaAtualizar} candidato(s) de {relatorio.totalLinhas} linha(s) da planilha teriam origem e/ou
+              localidade atualizadas. {relatorio.linhasJaAtualizadas} linha(s) já batiam com o que o candidato já tinha.{' '}
+              {relatorio.linhasSemCorrespondencia} linha(s) não corresponderam a nenhum candidato existente (ainda são só lead, ou a
+              pessoa não está cadastrada).
+            </div>
+            {relatorio.candidatosParaAtualizar > 0 ? (
+              <>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                  {Object.entries(relatorio.porStatusCandidato).map(([status, qtd]) => (
+                    <li key={status}>
+                      {qtd} no status "{STATUS_CANDIDATO[status]?.label || status}".
+                    </li>
+                  ))}
+                </ul>
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ cursor: 'pointer' }}>
+                    Ver amostra ({relatorio.amostra.length} de {relatorio.candidatosParaAtualizar})
+                  </summary>
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                    {relatorio.amostra.map((a) => (
+                      <li key={a.candidatoId}>
+                        "{a.nome}" (status: {a.status})
+                        {a.origemDepois ? ` — origem: ${a.origemAntes} → ${a.origemDepois}` : ''}
+                        {a.localidadeDepois ? ` — localidade: ${a.localidadeAntes} → ${a.localidadeDepois}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.candidatosAtualizados} candidato(s) atualizado(s) com sucesso. Confira a página de relatórios pra ver os
+            números corrigidos.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function AtualizarLeadsOrigem() {
+  const [arquivo, setArquivo] = useState(null);
+  const [checando, setChecando] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  function lerArquivoBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function verificar() {
+    if (!arquivo) {
+      setErro('Selecione um arquivo .xlsx primeiro.');
+      return;
+    }
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const fileBase64 = await lerArquivoBase64(arquivo);
+      const r = await fetch('/api/leads/atualizar-origem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileBase64, aplicar: false }),
+      });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível verificar a planilha.');
+      } else {
+        setRelatorio(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function aplicar() {
+    if (!arquivo || !relatorio) return;
+    const ok = window.confirm(
+      `Isso vai atualizar a origem de ${relatorio.leadsParaAtualizar} lead(s) com os dados da planilha, substituindo o que estiver preenchido hoje nesse campo. Essa ação não pode ser desfeita automaticamente. Confirma?`
+    );
+    if (!ok) return;
+    setAplicando(true);
+    setErro('');
+    try {
+      const fileBase64 = await lerArquivoBase64(arquivo);
+      const r = await fetch('/api/leads/atualizar-origem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileBase64, aplicar: true }),
+      });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível atualizar os leads.');
+      } else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Usa a mesma planilha de leads (casando por telefone/e-mail) pra corrigir a origem de leads que já existem — útil quando um
+          lote foi importado antes de um valor de origem virar uma opção reconhecida pelo sistema e ficou marcado como "Outro". Nunca
+          mexe em nome, telefone, e-mail, vaga ou status — só origem.
+        </div>
+        <div className="field-row" style={{ alignItems: 'flex-end' }}>
+          <div className="field" style={{ flex: 1 }}>
+            <label>Planilha (.xlsx, mesmo modelo de leads)</label>
+            <input
+              type="file"
+              accept=".xlsx"
+              onChange={(e) => {
+                setArquivo(e.target.files?.[0] || null);
+                setRelatorio(null);
+                setResultado(null);
+              }}
+            />
+          </div>
+          <button className="btn btn-outline btn-sm" type="button" onClick={verificar} disabled={checando || aplicando}>
+            {checando ? 'Verificando...' : 'Verificar'}
+          </button>
+          {relatorio && relatorio.leadsParaAtualizar > 0 ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={aplicar} disabled={aplicando}>
+              {aplicando ? 'Atualizando...' : `Atualizar ${relatorio.leadsParaAtualizar} lead(s)`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              {relatorio.leadsParaAtualizar} lead(s) de {relatorio.totalLinhas} linha(s) da planilha teriam a origem atualizada.{' '}
+              {relatorio.linhasJaAtualizadas} linha(s) já batiam com o que o lead já tinha. {relatorio.linhasSemCorrespondencia} linha(s)
+              não corresponderam a nenhum lead existente (já evoluiu pra candidato, ou a pessoa não está cadastrada).
+            </div>
+            {relatorio.leadsParaAtualizar > 0 ? (
+              <>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                  {Object.entries(relatorio.porStatusLead).map(([status, qtd]) => (
+                    <li key={status}>
+                      {qtd} no status "{STATUS_LEAD[status]?.label || status}".
+                    </li>
+                  ))}
+                </ul>
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ cursor: 'pointer' }}>
+                    Ver amostra ({relatorio.amostra.length} de {relatorio.leadsParaAtualizar})
+                  </summary>
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                    {relatorio.amostra.map((a) => (
+                      <li key={a.leadId}>
+                        "{a.nome}" (status: {a.status}) — origem: {a.origemAntes} → {a.origemDepois}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.leadsAtualizados} lead(s) atualizado(s) com sucesso.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function CompletarDadosCadastros() {
+  const [arquivo, setArquivo] = useState(null);
+  const [checando, setChecando] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  const NOMES_CAMPO = {
+    telefone: 'telefone',
+    email: 'e-mail',
+    localidade: 'localidade',
+    bairro: 'bairro',
+    profissao: 'profissão',
+    vaga_id: 'vaga de interesse',
+    cidade: 'cidade',
+    estado: 'estado',
+  };
+
+  function lerArquivoBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function chamarApi(aplicar) {
+    const fileBase64 = await lerArquivoBase64(arquivo);
+    const r = await fetch('/api/leads/completar-dados', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileBase64, aplicar }),
+    });
+    const json = await r.json();
+    return { ok: r.ok, json };
+  }
+
+  async function verificar() {
+    if (!arquivo) {
+      setErro('Selecione um arquivo .xlsx primeiro.');
+      return;
+    }
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const { ok, json } = await chamarApi(false);
+      if (!ok) setErro(json.error || 'Não foi possível verificar a planilha.');
+      else setRelatorio(json);
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function aplicar() {
+    if (!arquivo || !relatorio) return;
+    const total = relatorio.leadsParaCompletar + relatorio.candidatosParaCompletar;
+    const ok = window.confirm(
+      `Isso vai preencher campos vazios de ${total} cadastro(s) (${relatorio.leadsParaCompletar} lead(s) e ${relatorio.candidatosParaCompletar} candidato(s)). Campos já preenchidos não são trocados, e status, nome e origem não mudam. Não dá pra desfazer automaticamente. Confirma?`
+    );
+    if (!ok) return;
+    setAplicando(true);
+    setErro('');
+    try {
+      const { ok: deuCerto, json } = await chamarApi(true);
+      if (!deuCerto) setErro(json.error || 'Não foi possível completar os cadastros.');
+      else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  function resumoCampos(contagemObj) {
+    return Object.entries(contagemObj || {})
+      .map(([campo, qtd]) => `${NOMES_CAMPO[campo] || campo}: ${qtd}`)
+      .join(' · ');
+  }
+
+  const total = relatorio ? relatorio.leadsParaCompletar + relatorio.candidatosParaCompletar : 0;
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Usa a planilha (mesmo modelo de leads) pra completar os cadastros que já existem no painel — leads e candidatos — casando
+          por telefone/e-mail. Só preenche o que está vazio (telefone, e-mail, localidade, bairro, profissão e vaga). Nunca troca o
+          que já está preenchido e nunca mexe em nome, status ou origem.
+        </div>
+        <div className="field-row" style={{ alignItems: 'flex-end' }}>
+          <div className="field" style={{ flex: 1 }}>
+            <label>Planilha (.xlsx, mesmo modelo de leads)</label>
+            <input
+              type="file"
+              accept=".xlsx"
+              onChange={(e) => {
+                setArquivo(e.target.files?.[0] || null);
+                setRelatorio(null);
+                setResultado(null);
+              }}
+            />
+          </div>
+          <button className="btn btn-outline btn-sm" type="button" onClick={verificar} disabled={checando || aplicando}>
+            {checando ? 'Verificando...' : 'Verificar'}
+          </button>
+          {relatorio && total > 0 ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={aplicar} disabled={aplicando}>
+              {aplicando ? 'Completando...' : `Completar ${total} cadastro(s)`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              {relatorio.leadsParaCompletar} lead(s) e {relatorio.candidatosParaCompletar} candidato(s) têm campos vazios que a
+              planilha preenche. {relatorio.linhasSemCorrespondencia} linha(s) não correspondem a nenhum cadastro existente.
+            </div>
+            {relatorio.leadsParaCompletar > 0 ? (
+              <div style={{ marginTop: 6 }}>Leads — {resumoCampos(relatorio.contagemLeads)}</div>
+            ) : null}
+            {relatorio.candidatosParaCompletar > 0 ? (
+              <div style={{ marginTop: 6 }}>Candidatos — {resumoCampos(relatorio.contagemCandidatos)}</div>
+            ) : null}
+            {total > 0 ? (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer' }}>Ver amostra ({relatorio.amostra.length} de {total})</summary>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                  {relatorio.amostra.map((a, idx) => (
+                    <li key={`${a.tipo}-${idx}`}>
+                      "{a.nome}" ({a.tipo}) — preencher: {a.campos.map((c) => NOMES_CAMPO[c] || c).join(', ')}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.leadsCompletados} lead(s) e {resultado.candidatosCompletados} candidato(s) completados.
+            <div style={{ marginTop: 6 }}>Leads — {resumoCampos(resultado.contagemLeads) || 'nenhum campo'}</div>
+            <div style={{ marginTop: 6 }}>Candidatos — {resumoCampos(resultado.contagemCandidatos) || 'nenhum campo'}</div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function LimparDuplicados() {
+  const [checando, setChecando] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  async function checar() {
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const r = await fetch('/api/leads/limpar-duplicados', { method: 'GET' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível verificar duplicados.');
+      } else {
+        setRelatorio(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function excluir() {
+    if (!relatorio) return;
+    const ok = window.confirm(
+      `Isso vai excluir ${relatorio.linhasQueSeriamExcluidas} lead(s) duplicado(s), mantendo ${relatorio.linhasQueSeriamMantidas}. Essa ação não pode ser desfeita. Confirma?`
+    );
+    if (!ok) return;
+    setExcluindo(true);
+    setErro('');
+    try {
+      const r = await fetch('/api/leads/limpar-duplicados', { method: 'POST' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível excluir os duplicados.');
+      } else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setExcluindo(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Verifica leads com o mesmo telefone cadastrados mais de uma vez (ex: reimportação da mesma planilha, ou nome digitado diferente
+          da segunda vez) e mantém só 1 de cada — dando preferência ao que já está mais avançado no funil. Quando o nome varia entre os
+          duplicados do mesmo telefone, mostra aqui embaixo quais nomes apareciam, pra você conferir antes de excluir.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-outline btn-sm" type="button" onClick={checar} disabled={checando || excluindo}>
+            {checando ? 'Verificando...' : 'Verificar duplicados'}
+          </button>
+          {relatorio ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={excluir} disabled={excluindo}>
+              {excluindo ? 'Excluindo...' : `Excluir ${relatorio.linhasQueSeriamExcluidas} duplicado(s)`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              {relatorio.gruposDuplicados} grupo(s) duplicado(s) encontrado(s) — {relatorio.linhasQueSeriamExcluidas} linha(s) seriam
+              excluídas, mantendo {relatorio.linhasQueSeriamMantidas}. Total de leads hoje: {relatorio.totalLeads}.
+            </div>
+            {relatorio.gruposComNomesDiferentes?.length ? (
+              <div style={{ marginTop: 6 }}>
+                {relatorio.gruposComNomesDiferentes.length} telefone(s) com nomes diferentes entre os duplicados — fica o nome de quem
+                tiver o status mais avançado no funil:
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                  {relatorio.gruposComNomesDiferentes.map((a) => (
+                    <li key={a.telefone}>
+                      {a.telefone}: {a.nomes.join(' / ')} — fica como "{a.nomeMantido}"
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.linhasExcluidas} lead(s) duplicado(s) excluído(s) com sucesso. Recarregue a página pra ver os números
+            atualizados.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function LimparIncompletos() {
+  const [checando, setChecando] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  async function checar() {
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const r = await fetch('/api/leads/limpar-incompletos', { method: 'GET' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível verificar os leads incompletos.');
+      } else {
+        setRelatorio(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function excluir() {
+    if (!relatorio) return;
+    const ok = window.confirm(
+      `Isso vai excluir ${relatorio.incompletosParaExcluir} lead(s) sem telefone, mantendo ${relatorio.completos} com telefone${
+        relatorio.protegidosIncompletos ? ` e ${relatorio.protegidosIncompletos} incompleto(s) protegido(s) por já terem candidatura` : ''
+      }. Essa ação não pode ser desfeita. Confirma?`
+    );
+    if (!ok) return;
+    setExcluindo(true);
+    setErro('');
+    try {
+      const r = await fetch('/api/leads/limpar-incompletos', { method: 'POST' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível excluir os leads incompletos.');
+      } else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setExcluindo(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Mantém os leads com telefone preenchido, mesmo sem e-mail. Os leads sem telefone são excluídos. Leads já convertidos em
+          candidatura nunca são excluídos.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-outline btn-sm" type="button" onClick={checar} disabled={checando || excluindo}>
+            {checando ? 'Verificando...' : 'Verificar incompletos'}
+          </button>
+          {relatorio ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={excluir} disabled={excluindo}>
+              {excluindo ? 'Excluindo...' : `Excluir ${relatorio.incompletosParaExcluir} sem telefone`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              Total de leads: {relatorio.totalLeads}. Com telefone (mantidos): {relatorio.completos}. Sem telefone a excluir:{' '}
+              {relatorio.incompletosParaExcluir}.
+              {relatorio.protegidosIncompletos
+                ? ` ${relatorio.protegidosIncompletos} incompleto(s) protegido(s) por já terem candidatura — não serão excluídos.`
+                : ''}
+            </div>
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.linhasExcluidas} lead(s) sem telefone excluído(s) com sucesso. Recarregue a página pra ver os números
+            atualizados.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function RevisarEvoluidos() {
+  const [checando, setChecando] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  async function checar() {
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const r = await fetch('/api/leads/revisar-evoluidos', { method: 'GET' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível verificar os leads.');
+      } else {
+        setRelatorio(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function aplicar() {
+    if (!relatorio) return;
+    const ok = window.confirm(
+      `Isso vai marcar ${relatorio.totalParaAtualizar} lead(s) como "Convertido em candidato", porque já existe um candidato com os mesmos dados (ou vinculado a eles). O status anterior fica registrado no histórico de cada um. Confirma?`
+    );
+    if (!ok) return;
+    setAplicando(true);
+    setErro('');
+    try {
+      const r = await fetch('/api/leads/revisar-evoluidos', { method: 'POST' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível atualizar os leads.');
+      } else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Verifica, entre os leads que ainda não estão marcados como "Convertido", quais já têm um candidato cadastrado com o mesmo
+          telefone ou e-mail (ou já vinculado diretamente a esse lead) — inclusive os que já foram aprovados, contratados ou
+          declinados como candidato. Esses leads são movidos pra aba "Convertido" pra não ficarem parecendo pendentes de tratamento.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-outline btn-sm" type="button" onClick={checar} disabled={checando || aplicando}>
+            {checando ? 'Verificando...' : 'Verificar já evoluídos'}
+          </button>
+          {relatorio && relatorio.totalParaAtualizar > 0 ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={aplicar} disabled={aplicando}>
+              {aplicando ? 'Atualizando...' : `Marcar ${relatorio.totalParaAtualizar} como convertido`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              {relatorio.totalParaAtualizar} de {relatorio.totalLeads} lead(s) já são candidato e ainda não estão marcados como
+              "Convertido".
+            </div>
+            {relatorio.totalParaAtualizar > 0 ? (
+              <>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                  {Object.entries(relatorio.porStatusCandidato).map(([status, qtd]) => (
+                    <li key={status}>
+                      {qtd} como candidato no status "{STATUS_CANDIDATO[status]?.label || status}".
+                    </li>
+                  ))}
+                </ul>
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ cursor: 'pointer' }}>Ver amostra ({relatorio.amostra.length} de {relatorio.totalParaAtualizar})</summary>
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                    {relatorio.amostra.map((a) => (
+                      <li key={a.leadId}>
+                        "{a.nome}" ({a.telefone || 'sem telefone'}) — já é candidato "{a.candidato}" (status: {a.statusCandidato}
+                        ).
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.linhasAtualizadas} lead(s) marcado(s) como "Convertido". Recarregue a página pra ver os números atualizados.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+// Pontual: marca como "Em tratamento" os leads de uma lista de contatos que já tiveram conversa
+// real confirmada no WhatsApp (conferência manual feita fora do painel), mas que aqui ainda
+// aparecem como "Novo"/"Sem contato". Não usa "Convertido" de propósito — isso é reservado pra
+// quem já virou candidatura de verdade.
+function MarcarContatadosWhatsapp() {
+  const [checando, setChecando] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [relatorio, setRelatorio] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const [erro, setErro] = useState('');
+
+  async function checar() {
+    setChecando(true);
+    setErro('');
+    setRelatorio(null);
+    setResultado(null);
+    try {
+      const r = await fetch('/api/leads/marcar-contatados-whatsapp', { method: 'GET' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível verificar os leads.');
+      } else {
+        setRelatorio(json);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setChecando(false);
+    }
+  }
+
+  async function aplicar() {
+    if (!relatorio) return;
+    const ok = window.confirm(
+      `Isso vai marcar ${relatorio.totalParaAtualizar} lead(s) como "Em tratamento", porque já teve conversa real confirmada no WhatsApp. O status anterior fica registrado no histórico de cada um. Confirma?`
+    );
+    if (!ok) return;
+    setAplicando(true);
+    setErro('');
+    try {
+      const r = await fetch('/api/leads/marcar-contatados-whatsapp', { method: 'POST' });
+      const json = await r.json();
+      if (!r.ok) {
+        setErro(json.error || 'Não foi possível atualizar os leads.');
+      } else {
+        setResultado(json);
+        setRelatorio(null);
+      }
+    } catch {
+      setErro('Falha de conexão. Tente novamente.');
+    } finally {
+      setAplicando(false);
+    }
+  }
+
+  return (
+    <div className="card form-card" style={{ marginTop: 16 }}>
+      <div className="card-pad">
+        <div className="hint" style={{ marginBottom: 10 }}>
+          Ferramenta pontual: cruza uma lista de contatos com conversa real confirmada no WhatsApp (conferência manual feita em
+          13/10/2026) com os leads cadastrados pelo telefone. Quem estiver "Novo" ou "Sem contato" é movido pra "Em tratamento" —
+          não mexe em quem já está "Convertido" ou "Declinado".
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn btn-outline btn-sm" type="button" onClick={checar} disabled={checando || aplicando}>
+            {checando ? 'Verificando...' : 'Verificar contatos do WhatsApp'}
+          </button>
+          {relatorio && relatorio.totalParaAtualizar > 0 ? (
+            <button className="btn btn-primary btn-sm" type="button" onClick={aplicar} disabled={aplicando}>
+              {aplicando ? 'Atualizando...' : `Marcar ${relatorio.totalParaAtualizar} como em tratamento`}
+            </button>
+          ) : null}
+        </div>
+        {erro ? <div className="note" style={{ marginTop: 10 }}>{erro}</div> : null}
+        {relatorio ? (
+          <div className="note" style={{ marginTop: 10 }}>
+            <div>
+              {relatorio.totalLeadsEncontrados} de {relatorio.totalContatosLista} contato(s) da lista foram encontrados nos leads
+              ({relatorio.totalParaAtualizar} pra atualizar, {relatorio.jaEmTratamento} já em tratamento, {relatorio.jaAvancados} já
+              mais avançados — não serão tocados).
+            </div>
+            {relatorio.totalParaAtualizar > 0 ? (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer' }}>Ver quem vai mudar ({relatorio.amostra.length} de {relatorio.totalParaAtualizar})</summary>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                  {relatorio.amostra.map((a) => (
+                    <li key={a.leadId}>
+                      "{a.nome}" ({a.telefone || 'sem telefone'}) — status atual: {STATUS_LEAD[a.statusAtual]?.label || a.statusAtual}{' '}
+                      (contato: {a.contatoWhatsapp}).
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            {relatorio.naoEncontrados.length ? (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer' }}>Contatos da lista não encontrados nos leads ({relatorio.naoEncontrados.length})</summary>
+                <ul style={{ margin: '6px 0 0', paddingLeft: 18, maxHeight: 240, overflowY: 'auto' }}>
+                  {relatorio.naoEncontrados.map((nome) => (
+                    <li key={nome}>{nome}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
+        {resultado ? (
+          <div className="note" style={{ marginTop: 10, borderColor: 'var(--success)' }}>
+            {resultado.linhasAtualizadas} lead(s) marcado(s) como "Em tratamento". Recarregue a página pra ver os números
+            atualizados.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function EditarForm({ lead, vagas, onCancel }) {
+  return (
+    <tr>
+      <td colSpan={11} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+        <form method="POST" action={`/api/leads/${lead.id}/editar`} style={{ padding: '14px 16px' }}>
+          <div className="field">
+            <label>Nome</label>
+            <input type="text" name="nome" defaultValue={lead.nome} required autoFocus />
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label>Telefone</label>
+              <input type="tel" name="telefone" defaultValue={lead.telefone || ''} />
+            </div>
+            <div className="field">
+              <label>E-mail</label>
+              <input type="email" name="email" defaultValue={lead.email || ''} />
+            </div>
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label>Localidade</label>
+              <input type="text" name="localidade" defaultValue={lead.localidade || ''} placeholder="Cidade - UF" />
+            </div>
+            <div className="field">
+              <label>Vaga de interesse</label>
+              <select name="vaga_id" defaultValue={lead.vaga_id || ''}>
+                <option value="">Ainda não sei</option>
+                {vagas.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.titulo}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="field">
+            <label>Origem</label>
+            <select name="origem" defaultValue={lead.origem || 'outro'}>
+              {ORIGEM_ORDEM.filter((o) => o !== 'site').map((o) => (
+                <option key={o} value={o}>
+                  {ORIGEM_LABEL[o]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Salvar alterações
+            </button>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
+function EvoluirForm({ lead, vagas, onCancel }) {
+  return (
+    <tr>
+      <td colSpan={11} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+        <form method="POST" action={`/api/leads/${lead.id}/gerar-link`} style={{ padding: '14px 16px' }}>
+          <div className="field">
+            <label>Vaga de interesse</label>
+            <select name="vaga_id" defaultValue={lead.vaga_id || ''} required>
+              <option value="" disabled>
+                Selecione
+              </option>
+              {vagas.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.titulo}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="hint">Isso gera o link de candidatura para esse lead preencher e marca ele como "Convertido".</div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Gerar link e evoluir
+            </button>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
+// Formulário inline pra declinar um lead com motivo — evita "declinar sem querer" e deixa
+// registrado no histórico (lead_eventos.observacao) por que ele saiu do funil.
+function DeclinarForm({ lead, onCancel }) {
+  const [motivo, setMotivo] = useState(MOTIVOS_DECLINIO_LEAD[0]);
+  const outro = motivo === 'Outro';
+  return (
+    <tr>
+      <td colSpan={11} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+        <form method="POST" action={`/api/leads/${lead.id}/status`} style={{ padding: '14px 16px' }}>
+          <input type="hidden" name="status" value="declinado" />
+          <div className="field">
+            <label>Motivo do declínio</label>
+            <select name={outro ? undefined : 'observacao'} value={motivo} onChange={(e) => setMotivo(e.target.value)} required>
+              {MOTIVOS_DECLINIO_LEAD.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+          {outro ? (
+            <div className="field">
+              <label>Qual?</label>
+              <input type="text" name="observacao" placeholder="Descreva o motivo" required autoFocus />
+            </div>
+          ) : null}
+          <div className="hint">Fica registrado no histórico desse lead.</div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Confirmar declínio
+            </button>
+            <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
+function TimelineLead({ eventos }) {
+  return (
+    <tr>
+      <td colSpan={11} style={{ background: 'var(--surface-2, #f7f7fa)', padding: '12px 16px' }}>
+        {eventos.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>Sem eventos registrados ainda.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {eventos.map((e) => (
+              <div key={e.id} style={{ fontSize: 12.5, display: 'flex', gap: 10 }}>
+                <span style={{ color: 'var(--ink-faint)', minWidth: 132, flexShrink: 0 }}>{new Date(e.criado_em).toLocaleString('pt-BR')}</span>
+                <span>
+                  <b>{LABEL_TIPO_EVENTO[e.tipo] || e.tipo}</b>
+                  {e.status_anterior && e.status_novo
+                    ? ` · ${STATUS_LEAD[e.status_anterior]?.label || e.status_anterior} → ${STATUS_LEAD[e.status_novo]?.label || e.status_novo}`
+                    : ''}
+                  {e.observacao ? ` — ${e.observacao}` : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro, usuario }) {
+  const router = useRouter();
+  const souAdmin = usuario.tipo === 'admin';
+  const [showForm, setShowForm] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [showLimpar, setShowLimpar] = useState(false);
+  const [showLimparIncompletos, setShowLimparIncompletos] = useState(false);
+  const [showRevisar, setShowRevisar] = useState(false);
+  const [showContatosWhatsapp, setShowContatosWhatsapp] = useState(false);
+  const [showAtualizarCandidatos, setShowAtualizarCandidatos] = useState(false);
+  const [showAtualizarLeads, setShowAtualizarLeads] = useState(false);
+  const [showCompletarDados, setShowCompletarDados] = useState(false);
+  // Feedback, por lead, de se o card de divulgação foi copiado com sucesso pra área de
+  // transferência ao clicar no WhatsApp ('ok' | 'falhou') — undefined antes do primeiro clique.
+  const [cardCopiadoStatus, setCardCopiadoStatus] = useState({});
+  const [evoluindoId, setEvoluindoId] = useState(null);
+  const [declinandoId, setDeclinandoId] = useState(null);
+  const [editandoId, setEditandoId] = useState(null);
+  const [timelineId, setTimelineId] = useState(null);
+  // "Sem tratar" é a visão padrão — só o que realmente precisa de uma primeira ação sua. Cada
+  // status tem sua própria aba, pra nada ficar escondido dentro de um "outros" genérico.
+  const [abaLeads, setAbaLeads] = useState('novo');
+  const [filtroOrigem, setFiltroOrigem] = useState('todas');
+  const [filtroEstado, setFiltroEstado] = useState('todas');
+  const [filtroCidade, setFiltroCidade] = useState('todas');
+  const [filtroBairro, setFiltroBairro] = useState('todas');
+  const [filtroVaga, setFiltroVaga] = useState('todas');
+  // Busca por telefone: digita qualquer trecho do número e encontra o lead direto, não importa
+  // em qual aba (status) ele está hoje — pensado pra quando você já sabe o contato e só quer
+  // declinar ou evoluir ele rápido, sem precisar adivinhar/ir clicando aba por aba. Enquanto tem
+  // busca digitada, ela substitui a aba (mostra de todos os status juntos); a coluna "Status" na
+  // tabela já deixa claro onde cada resultado está.
+  const [buscaTelefone, setBuscaTelefone] = useState('');
+  // A tabela de leads mostra só uma página por vez (em vez da aba inteira de uma vez) — com
+  // milhares de leads em "Sem tratar", renderizar tudo junto deixava a página extremamente
+  // pesada e travava o navegador. Volta pra página 1 sempre que a aba ou os filtros mudam, senão
+  // dava pra ficar "preso" numa página 40 que não existe mais depois de trocar de aba.
+  const [paginaLeads, setPaginaLeads] = useState(1);
+  // Seleção múltipla (só admin): ids dos leads marcados, pra declinar vários de uma vez.
+  const [selecionados, setSelecionados] = useState(() => new Set());
+  const [motivoLote, setMotivoLote] = useState(MOTIVOS_DECLINIO_LEAD[0]);
+  const [observacaoLote, setObservacaoLote] = useState('');
+  const [executandoLote, setExecutandoLote] = useState(false);
+  const [erroLote, setErroLote] = useState('');
+  const [avisoLote, setAvisoLote] = useState('');
+  const LEADS_POR_PAGINA = 50;
+
+  const vagaNome = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
+  const eventosDoLead = (id) => eventos.filter((e) => e.lead_id === id);
+  const jaCandidatou = (id) => candidatos.some((c) => c.lead_id === id);
+
+  // Clicar no ícone do WhatsApp já conta como "tratei esse lead" — marca em_tratamento
+  // automaticamente, sem exigir um clique extra em "Sem contato"/etc. Só mexe quando o lead
+  // ainda está em aberto (novo/sem_contato/já em tratamento); não sobrescreve uma decisão já
+  // tomada (declinado) nem um lead que já virou candidato (a própria API também bloqueia isso).
+  function marcarEmTratamentoAoChamar(lead) {
+    if (lead.status === 'declinado' || lead.status === 'convertido' || lead.status === 'em_tratamento') return;
+    fetch(`/api/leads/${lead.id}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ status: 'em_tratamento' }),
+    })
+      .then(() => router.replace(router.asPath, undefined, { scroll: false }))
+      .catch(() => {});
+  }
+
+  // Ao clicar em "Chamar no WhatsApp" num lead com card de divulgação, tenta copiar a imagem
+  // pra área de transferência antes de abrir a conversa — o próprio clique é o gesto do usuário
+  // que o navegador exige pra permitir isso, por isso dispara antes do link abrir a nova aba.
+  function handleCliqueWhatsapp(lead) {
+    marcarEmTratamentoAoChamar(lead);
+    const urlCard = CARD_DIVULGACAO_POR_ORIGEM[lead.origem];
+    if (!urlCard) return;
+    copiarCardParaClipboard(urlCard).then((ok) => {
+      setCardCopiadoStatus((prev) => ({ ...prev, [lead.id]: ok ? 'ok' : 'falhou' }));
+    });
+  }
+
+  // Clicar no WhatsApp já marca "em tratamento" automaticamente (função acima) — mas às vezes o
+  // número dá errado/indisponível lá e, ao voltar pro painel, o lead fica "em tratamento" sem
+  // ter rolado contato de verdade. Esse atalho fica do lado do ícone pra corrigir isso num clique
+  // só: declina o lead com o motivo já certo, sem precisar abrir o formulário completo de
+  // declínio. Não detecta automaticamente (o WhatsApp abre fora do painel, não tem como saber se
+  // deu certo) — é só pra ser rápido quando você perceber que não deu.
+  function marcarNumeroInvalido(lead) {
+    fetch(`/api/leads/${lead.id}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ status: 'declinado', observacao: 'Telefone ou e-mail inválido' }),
+    })
+      .then(() => router.replace(router.asPath, undefined, { scroll: false }))
+      .catch(() => {});
+  }
+
+  const total = leads.length;
+  const porStatus = { novo: 0, em_tratamento: 0, sem_contato: 0, declinado: 0, convertido: 0 };
+  leads.forEach((l) => {
+    porStatus[l.status] = (porStatus[l.status] || 0) + 1;
+  });
+  const taxaConversao = total ? Math.round((porStatus.convertido / total) * 100) : 0;
+
+  // Uma aba por status — a ordem aqui é a ordem em que as abas aparecem na tela.
+  const ABAS_LEADS = [
+    { status: 'novo', label: 'Sem tratar' },
+    { status: 'em_tratamento', label: 'Em tratamento' },
+    { status: 'sem_contato', label: 'Sem contato' },
+    { status: 'declinado', label: 'Declinado' },
+    { status: 'convertido', label: 'Convertido' },
+  ];
+  // Localidade é texto livre (vem do cadastro/importação), não um enum fixo como origem — então
+  // a lista de opções do filtro é montada a partir do que realmente existe nos leads.
+  // Estado, cidade e bairro saem daí: a localidade no formato "Cidade - UF" é separada em duas
+  // partes; o bairro vem da coluna própria. Cidade só lista as cidades do estado escolhido.
+  const estadosDisponiveis = Array.from(new Set(leads.map((l) => separarLocalidade(l.localidade).estado).filter(Boolean))).sort(
+    (a, b) => a.localeCompare(b, 'pt-BR')
+  );
+  const cidadesDisponiveis = Array.from(
+    new Set(
+      leads
+        .map((l) => separarLocalidade(l.localidade))
+        .filter((x) => x.cidade && (filtroEstado === 'todas' || x.estado === filtroEstado))
+        .map((x) => x.cidade)
+    )
+  ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const bairrosDisponiveis = Array.from(new Set(leads.map((l) => l.bairro).filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b, 'pt-BR')
+  );
+  // Igual à localidade: a lista de opções do filtro de vaga só mostra vagas que realmente têm
+  // algum lead vinculado (em vez de todas as vagas cadastradas), pra não poluir o menu com vagas
+  // sem nenhum lead. "(sem vaga)" fica como opção separada pra quem quer ver só os leads ainda
+  // sem vaga definida (ex.: os importados de planilha genérica).
+  const vagasComLeads = Array.from(new Set(leads.map((l) => l.vaga_id).filter(Boolean)));
+  const vagasDisponiveis = vagasComLeads
+    .map((id) => ({ id, titulo: vagaNome(id) }))
+    .sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'));
+  const temLeadsSemVaga = leads.some((l) => !l.vaga_id);
+  const leadsFiltrados = leads.filter(
+    (l) =>
+      (filtroOrigem === 'todas' || l.origem === filtroOrigem) &&
+      (filtroEstado === 'todas' || separarLocalidade(l.localidade).estado === filtroEstado) &&
+      (filtroCidade === 'todas' || separarLocalidade(l.localidade).cidade === filtroCidade) &&
+      (filtroBairro === 'todas' || l.bairro === filtroBairro) &&
+      (filtroVaga === 'todas' || (filtroVaga === '__sem_vaga__' ? !l.vaga_id : l.vaga_id === filtroVaga))
+  );
+  // Contagem de cada aba já considera os filtros de origem/localidade ativos, pra não mostrar um
+  // número que depois não bate com o que aparece na tabela. Não considera a busca por telefone —
+  // essas continuam mostrando o total de cada aba mesmo com uma busca em andamento.
+  const porStatusFiltrado = { novo: 0, em_tratamento: 0, sem_contato: 0, declinado: 0, convertido: 0 };
+  leadsFiltrados.forEach((l) => {
+    porStatusFiltrado[l.status] = (porStatusFiltrado[l.status] || 0) + 1;
+  });
+  const buscaTelefoneDigitos = buscaTelefone.replace(/\D/g, '');
+  const emBuscaTelefone = buscaTelefoneDigitos.length > 0;
+  const leadsExibidos = emBuscaTelefone
+    ? leadsFiltrados.filter((l) => (l.telefone || '').replace(/\D/g, '').includes(buscaTelefoneDigitos))
+    : leadsFiltrados.filter((l) => l.status === abaLeads);
+  const totalPaginasLeads = Math.max(1, Math.ceil(leadsExibidos.length / LEADS_POR_PAGINA));
+  const paginaLeadsAtual = Math.min(paginaLeads, totalPaginasLeads);
+  const leadsDaPagina = leadsExibidos.slice(
+    (paginaLeadsAtual - 1) * LEADS_POR_PAGINA,
+    paginaLeadsAtual * LEADS_POR_PAGINA
+  );
+
+  // Listas da seleção rápida: consideram a base toda (não só a aba atual) e só leads ainda em
+  // aberto — quem já foi declinado ou virou candidato fica de fora.
+  const ABERTOS = ['novo', 'em_tratamento', 'sem_contato'];
+  const idsForaDoEstado = leads
+    .filter((l) => ABERTOS.includes(l.status) && classificarLocalidade(l.localidade) === 'fora_do_estado')
+    .map((l) => l.id);
+  const idsForaDaRegiao = leads
+    .filter((l) => ABERTOS.includes(l.status) && classificarLocalidade(l.localidade) === 'fora_da_regiao')
+    .map((l) => l.id);
+  const idsDaPagina = leadsDaPagina.map((l) => l.id);
+  const todosDaPaginaSelecionados = idsDaPagina.length > 0 && idsDaPagina.every((id) => selecionados.has(id));
+
+  function alternarSelecionado(id) {
+    setSelecionados((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(id)) novo.delete(id);
+      else novo.add(id);
+      return novo;
+    });
+  }
+
+  function alternarPagina() {
+    setSelecionados((atual) => {
+      const novo = new Set(atual);
+      if (todosDaPaginaSelecionados) idsDaPagina.forEach((id) => novo.delete(id));
+      else idsDaPagina.forEach((id) => novo.add(id));
+      return novo;
+    });
+  }
+
+  // Substitui a seleção atual pela lista escolhida e já preenche o motivo e a observação do
+  // histórico (ex.: "Fora do estado (não é RS)").
+  function selecionarLote(ids, motivo, observacao) {
+    setSelecionados(new Set(ids));
+    setMotivoLote(motivo);
+    setObservacaoLote(observacao);
+    setAvisoLote('');
+    setErroLote('');
+  }
+
+  function limparSelecao() {
+    setSelecionados(new Set());
+    setObservacaoLote('');
+    setErroLote('');
+  }
+
+  async function declinarSelecionados() {
+    const ids = Array.from(selecionados);
+    if (ids.length === 0) return;
+    const ok = window.confirm(
+      `Declinar ${ids.length} lead(s) com o motivo "${motivoLote}"? Eles saem do funil, e cada um fica com esse registro no histórico.`
+    );
+    if (!ok) return;
+    setExecutandoLote(true);
+    setErroLote('');
+    setAvisoLote('');
+    try {
+      const r = await fetch('/api/leads/declinar-selecionados', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, motivo: motivoLote, observacao: observacaoLote, executar: true }),
+      });
+      const json = await r.json();
+      if (!r.ok) {
+        setErroLote(json.error || 'Não foi possível declinar os leads.');
+      } else {
+        const extras = [
+          json.jaDeclinados ? `${json.jaDeclinados} já estavam declinados.` : '',
+          json.jaConvertidos ? `${json.jaConvertidos} já viraram candidatos e não foram alterados.` : '',
+        ]
+          .filter(Boolean)
+          .join(' ');
+        setAvisoLote(`${json.totalAtualizados} lead(s) declinado(s). ${extras}`.trim());
+        limparSelecao();
+        router.replace(router.asPath, undefined, { scroll: false });
+      }
+    } catch {
+      setErroLote('Falha de conexão. Tente novamente.');
+    } finally {
+      setExecutandoLote(false);
+    }
+  }
+
+  const hojeStr = new Date().toISOString().slice(0, 10);
+  const contatosHoje = eventos.filter((e) => e.tipo === 'status' && e.criado_em?.slice(0, 10) === hojeStr).length;
+
+  const diasRecentes = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    diasRecentes.push(d.toISOString().slice(0, 10));
+  }
+  const contatosPorDia = diasRecentes.map((iso) => ({
+    iso,
+    total: eventos.filter((e) => e.tipo === 'status' && e.criado_em?.slice(0, 10) === iso).length,
+  }));
+
+  return (
+    <Layout active="leads" crumb="Recrutamento" title="Leads" usuario={usuario}>
+      {erro ? (
+        <div className="note" style={{ marginBottom: 16 }}>
+          Não foi possível concluir a ação. Confira os dados e tente de novo.
+        </div>
+      ) : null}
+
+      <div className="toolbar" style={{ justifyContent: 'space-between' }}>
+        <p style={{ fontSize: 12.8, color: 'var(--ink-soft)', maxWidth: 460 }}>
+          Etapa anterior ao formulário de candidatura — trate o contato aqui e só depois envie o link para agendar a entrevista.
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {souAdmin ? (
+            <>
+              <a className="btn btn-outline btn-sm" href="/api/leads/modelo">
+                {Icon.link({ className: 'ic' })} Baixar modelo (.xlsx)
+              </a>
+              <a className="btn btn-outline btn-sm" href="/api/leads/exportar" title="Baixa todos os leads do painel em planilha (.xlsx)">
+                {Icon.link({ className: 'ic' })} Exportar planilha
+              </a>
+              <button className="btn btn-outline" onClick={() => setShowImport((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Importar planilha
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowLimpar((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Remover duplicados
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowLimparIncompletos((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Manter só com telefone
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowRevisar((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Verificar já evoluídos
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowContatosWhatsapp((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Marcar contatados no WhatsApp
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowAtualizarCandidatos((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Atualizar candidatos (origem/localidade)
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowAtualizarLeads((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Atualizar leads (origem)
+              </button>
+              <button className="btn btn-outline" onClick={() => setShowCompletarDados((v) => !v)}>
+                {Icon.plus({ className: 'ic' })} Completar dados dos cadastros
+              </button>
+            </>
+          ) : null}
+          <button className="btn btn-primary" onClick={() => setShowForm((v) => !v)}>
+            {Icon.plus({ className: 'ic' })} Cadastrar lead
+          </button>
+        </div>
+      </div>
+
+      {souAdmin && showImport ? <ImportarLeads /> : null}
+      {souAdmin && showLimpar ? <LimparDuplicados /> : null}
+      {souAdmin && showLimparIncompletos ? <LimparIncompletos /> : null}
+      {souAdmin && showRevisar ? <RevisarEvoluidos /> : null}
+      {souAdmin && showContatosWhatsapp ? <MarcarContatadosWhatsapp /> : null}
+      {souAdmin && showAtualizarCandidatos ? <AtualizarCandidatosOrigem /> : null}
+      {souAdmin && showAtualizarLeads ? <AtualizarLeadsOrigem /> : null}
+      {souAdmin && showCompletarDados ? <CompletarDadosCadastros /> : null}
+
+      {showForm ? (
+        <div className="card form-card" style={{ marginTop: 16 }}>
+          <div className="card-pad">
+            <form method="POST" action="/api/leads">
+              <div className="field">
+                <label>Nome</label>
+                <input type="text" name="nome" required />
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label>Telefone</label>
+                  <input type="tel" name="telefone" />
+                </div>
+                <div className="field">
+                  <label>E-mail</label>
+                  <input type="email" name="email" />
+                </div>
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label>Localidade</label>
+                  <input type="text" name="localidade" placeholder="Cidade - UF" />
+                </div>
+                <div className="field">
+                  <label>{souAdmin ? 'Vaga de interesse (opcional)' : 'Vaga de interesse'}</label>
+                  <select name="vaga_id" defaultValue="" required={!souAdmin}>
+                    {souAdmin ? <option value="">Ainda não sei</option> : <option value="" disabled>Selecione uma vaga sua</option>}
+                    {vagas.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.titulo}
+                      </option>
+                    ))}
+                  </select>
+                  {!souAdmin ? <p className="hint">Como gerente, o lead precisa já estar vinculado a uma das suas vagas.</p> : null}
+                </div>
+              </div>
+              <div className="field">
+                <label>Origem</label>
+                <select name="origem" defaultValue="outro" required>
+                  {ORIGEM_ORDEM.filter((o) => o !== 'site').map((o) => (
+                    <option key={o} value={o}>
+                      {ORIGEM_LABEL[o]}
+                    </option>
+                  ))}
+                </select>
+                <p className="hint">De onde esse contato veio — usado nas métricas de conversão por canal.</p>
+              </div>
+              <button className="btn btn-primary" type="submit">
+                Cadastrar
+              </button>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="grid grid-4" style={{ marginTop: 16 }}>
+        <div className="stat">
+          <div className="label">Novos</div>
+          <div className="value num">{porStatus.novo}</div>
+          <div className="sub">Ainda precisam ser tratados</div>
+        </div>
+        <div className="stat">
+          <div className="label">Sem contato</div>
+          <div className="value num">{porStatus.sem_contato}</div>
+          <div className="sub">Tentativas sem sucesso</div>
+        </div>
+        <div className="stat">
+          <div className="label">Declinados</div>
+          <div className="value num">{porStatus.declinado}</div>
+          <div className="sub">Recusaram seguir</div>
+        </div>
+        <div className="stat">
+          <div className="label">Convertidos</div>
+          <div className="value num">{porStatus.convertido}</div>
+          <div className="sub">Viraram candidatos</div>
+        </div>
+      </div>
+
+      <div className="grid grid-3" style={{ marginTop: 14 }}>
+        <div className="stat">
+          <div className="label">Total de leads</div>
+          <div className="value num">{total}</div>
+          <div className="sub">Cadastrados no funil</div>
+        </div>
+        <div className="stat">
+          <div className="label">Contatos hoje</div>
+          <div className="value num">{contatosHoje}</div>
+          <div className="sub">Mudanças de status registradas hoje</div>
+        </div>
+        <div className="stat">
+          <div className="label">Taxa de conversão</div>
+          <div className="value num">{taxaConversao}%</div>
+          <div className="sub">Leads que viraram candidato</div>
+        </div>
+      </div>
+
+      <div className="section-head">
+        <h2>Leads por origem</h2>
+        <p>De onde os contatos estão vindo</p>
+      </div>
+      <div className="card card-pad">
+        <div className="grid grid-4">
+          {ORIGEM_ORDEM.filter((o) => o !== 'site').map((o) => (
+            <div key={o} style={{ textAlign: 'center', padding: 10 }}>
+              <div style={{ fontFamily: 'Sora,sans-serif', fontSize: 26 }}>{leads.filter((l) => l.origem === o).length}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--ink-soft)', marginTop: 2 }}>{ORIGEM_LABEL[o]}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="section-head">
+        <h2>Contatos por dia</h2>
+        <p>Últimos 14 dias — cada mudança de status conta como um contato realizado</p>
+      </div>
+      <div className="card card-pad" style={{ overflowX: 'auto' }}>
+        <div style={{ display: 'flex', gap: 10, minWidth: 560 }}>
+          {contatosPorDia.map((d) => (
+            <div key={d.iso} style={{ flex: 1, textAlign: 'center' }}>
+              <div
+                style={{
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  color: d.total ? 'var(--primary-soft)' : 'var(--ink-faint)',
+                }}
+              >
+                {d.total}
+              </div>
+              <div style={{ fontSize: 10.5, color: 'var(--ink-faint)', marginTop: 2 }}>{fmtData(d.iso).slice(0, 5)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="section-head">
+        <h2>Leads</h2>
+        <p>Trate cada lead até declinar ou evoluir para candidatura</p>
+      </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder="Buscar por telefone..."
+          style={{ maxWidth: 220 }}
+          value={buscaTelefone}
+          onChange={(e) => {
+            setBuscaTelefone(e.target.value);
+            setPaginaLeads(1);
+          }}
+        />
+        <select
+          style={{ maxWidth: 220 }}
+          value={filtroOrigem}
+          onChange={(e) => {
+            setFiltroOrigem(e.target.value);
+            setPaginaLeads(1);
+          }}
+        >
+          <option value="todas">Todas as origens</option>
+          {ORIGEM_ORDEM.map((o) => (
+            <option key={o} value={o}>
+              {ORIGEM_LABEL[o]}
+            </option>
+          ))}
+        </select>
+        <select
+          style={{ maxWidth: 160 }}
+          value={filtroEstado}
+          onChange={(e) => {
+            setFiltroEstado(e.target.value);
+            setFiltroCidade('todas');
+            setPaginaLeads(1);
+          }}
+        >
+          <option value="todas">Todos os estados</option>
+          {estadosDisponiveis.map((uf) => (
+            <option key={uf} value={uf}>
+              {uf}
+            </option>
+          ))}
+        </select>
+        <select
+          style={{ maxWidth: 200 }}
+          value={filtroCidade}
+          onChange={(e) => {
+            setFiltroCidade(e.target.value);
+            setPaginaLeads(1);
+          }}
+        >
+          <option value="todas">Todas as cidades</option>
+          {cidadesDisponiveis.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <select
+          style={{ maxWidth: 200 }}
+          value={filtroBairro}
+          onChange={(e) => {
+            setFiltroBairro(e.target.value);
+            setPaginaLeads(1);
+          }}
+        >
+          <option value="todas">Todos os bairros</option>
+          {bairrosDisponiveis.map((b) => (
+            <option key={b} value={b}>
+              {b}
+            </option>
+          ))}
+        </select>
+        <select
+          style={{ maxWidth: 240 }}
+          value={filtroVaga}
+          onChange={(e) => {
+            setFiltroVaga(e.target.value);
+            setPaginaLeads(1);
+          }}
+        >
+          <option value="todas">Todas as vagas</option>
+          {vagasDisponiveis.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.titulo}
+            </option>
+          ))}
+          {temLeadsSemVaga ? <option value="__sem_vaga__">(sem vaga)</option> : null}
+        </select>
+        {filtroOrigem !== 'todas' || filtroEstado !== 'todas' || filtroCidade !== 'todas' || filtroBairro !== 'todas' || filtroVaga !== 'todas' || buscaTelefone ? (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setFiltroOrigem('todas');
+              setFiltroEstado('todas');
+              setFiltroCidade('todas');
+              setFiltroBairro('todas');
+              setFiltroVaga('todas');
+              setBuscaTelefone('');
+              setPaginaLeads(1);
+            }}
+          >
+            Limpar filtros
+          </button>
+        ) : null}
+      </div>
+      {souAdmin ? (
+        <div className="card" style={{ marginBottom: 12, padding: '12px 16px' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <strong style={{ fontSize: 13 }}>
+              {selecionados.size > 0 ? `${selecionados.size} lead(s) selecionado(s)` : 'Nenhum lead selecionado'}
+            </strong>
+            <button
+              className="btn btn-outline btn-sm"
+              type="button"
+              title="Substitui a seleção pelos leads em aberto com localidade fora do RS, de todas as abas"
+              onClick={() => selecionarLote(idsForaDoEstado, 'Localização incompatível', 'Fora do estado (não é RS)')}
+              disabled={idsForaDoEstado.length === 0}
+            >
+              Selecionar fora do RS ({idsForaDoEstado.length})
+            </button>
+            <button
+              className="btn btn-outline btn-sm"
+              type="button"
+              title="Substitui a seleção pelos leads em aberto no RS fora da região de atuação (Porto Alegre e Canoas), de todas as abas"
+              onClick={() =>
+                selecionarLote(idsForaDaRegiao, 'Localização incompatível', 'Fora da região de atuação (Porto Alegre e Canoas)')
+              }
+              disabled={idsForaDaRegiao.length === 0}
+            >
+              Selecionar fora da região ({idsForaDaRegiao.length})
+            </button>
+            {selecionados.size > 0 ? (
+              <>
+                <select
+                  style={{ maxWidth: 300 }}
+                  value={motivoLote}
+                  onChange={(e) => {
+                    setMotivoLote(e.target.value);
+                    setObservacaoLote('');
+                  }}
+                >
+                  {MOTIVOS_DECLINIO_LEAD.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+                <button className="btn btn-primary btn-sm" type="button" onClick={declinarSelecionados} disabled={executandoLote}>
+                  {executandoLote ? 'Declinando...' : `Declinar ${selecionados.size} selecionado(s)`}
+                </button>
+                <button className="btn btn-ghost btn-sm" type="button" onClick={limparSelecao} disabled={executandoLote}>
+                  Limpar seleção
+                </button>
+              </>
+            ) : null}
+          </div>
+          {observacaoLote ? (
+            <div className="hint" style={{ marginTop: 6 }}>
+              Fica registrado no histórico de cada lead: "{motivoLote} — {observacaoLote}"
+            </div>
+          ) : null}
+          {erroLote ? <div className="note" style={{ marginTop: 8 }}>{erroLote}</div> : null}
+          {avisoLote ? (
+            <div className="note" style={{ marginTop: 8, borderColor: 'var(--success)' }}>
+              {avisoLote}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {emBuscaTelefone ? (
+        <div className="hint" style={{ marginBottom: 12 }}>
+          Mostrando resultados da busca por telefone em todas as abas/status — apague o campo de busca pra voltar a navegar por aba.
+        </div>
+      ) : (
+        <div className="tabs" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
+          {ABAS_LEADS.map((aba) => (
+            <button
+              key={aba.status}
+              type="button"
+              className={`btn btn-sm ${abaLeads === aba.status ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => {
+                setAbaLeads(aba.status);
+                setPaginaLeads(1);
+              }}
+            >
+              {aba.label} ({porStatusFiltrado[aba.status] || 0})
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="card">
+        <div className="table-wrap">
+          {leads.length === 0 ? (
+            <div className="empty">Nenhum lead cadastrado ainda.</div>
+          ) : leadsExibidos.length === 0 ? (
+            <div className="empty">
+              {emBuscaTelefone
+                ? 'Nenhum lead encontrado com esse telefone.'
+                : filtroOrigem !== 'todas' || filtroEstado !== 'todas' || filtroCidade !== 'todas' || filtroBairro !== 'todas' || filtroVaga !== 'todas'
+                ? 'Nenhum lead encontrado com esses filtros.'
+                : abaLeads === 'novo'
+                ? 'Nenhum lead sem tratar — tudo em dia 🎉'
+                : `Nenhum lead com status "${ABAS_LEADS.find((a) => a.status === abaLeads)?.label}" ainda.`}
+            </div>
+          ) : (
+            <table className="table-compact">
+              <thead>
+                <tr>
+                  <th style={{ width: 36 }}>
+                    {souAdmin ? (
+                      <input
+                        type="checkbox"
+                        checked={todosDaPaginaSelecionados}
+                        onChange={alternarPagina}
+                        title="Selecionar todos os leads desta página"
+                      />
+                    ) : null}
+                  </th>
+                  <th>Lead</th>
+                  <th>Telefone</th>
+                  <th>E-mail</th>
+                  <th>Origem</th>
+                  <th>Vaga</th>
+                  <th>Localidade</th>
+                  <th>Bairro</th>
+                  <th>Status</th>
+                  <th>Cadastro</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {leadsDaPagina.map((l) => {
+                  const st = STATUS_LEAD[l.status];
+                  if (evoluindoId === l.id) {
+                    return <EvoluirForm key={l.id} lead={l} vagas={vagas} onCancel={() => setEvoluindoId(null)} />;
+                  }
+                  if (declinandoId === l.id) {
+                    return <DeclinarForm key={l.id} lead={l} onCancel={() => setDeclinandoId(null)} />;
+                  }
+                  if (editandoId === l.id) {
+                    return <EditarForm key={l.id} lead={l} vagas={vagas} onCancel={() => setEditandoId(null)} />;
+                  }
+                  const linhas = [
+                    <tr key={l.id}>
+                      <td>
+                        {souAdmin ? (
+                          <input
+                            type="checkbox"
+                            checked={selecionados.has(l.id)}
+                            onChange={() => alternarSelecionado(l.id)}
+                            aria-label={`Selecionar ${l.nome}`}
+                          />
+                        ) : null}
+                      </td>
+                      <td>
+                        <div className="cell-person">
+                          <div className="mini-avatar">{initials(l.nome)}</div>
+                          <div>
+                            <div className="row-title">{l.nome}</div>
+                            {l.profissao ? <div className="row-sub">{l.profissao}</div> : null}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="row-sub">
+                        {l.telefone ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            {telefonesDoLead(l.telefone).map((tel, idx) => (
+                              <span key={`${tel}-${idx}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <span>{tel}</span>
+                                <a
+                                  href={linkWhatsapp(tel, l.nome, l.origem, l.vaga_id, baseUrl)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title={
+                                    CARD_DIVULGACAO_POR_ORIGEM[l.origem]
+                                      ? `Chamar ${tel} no WhatsApp — o card de divulgação já é copiado automaticamente, é só colar (Ctrl+V) na conversa`
+                                      : `Chamar ${tel} no WhatsApp`
+                                  }
+                                  style={{ display: 'inline-flex' }}
+                                  onClick={() => handleCliqueWhatsapp(l)}
+                                >
+                                  {Icon.whatsapp({ className: 'ic' })}
+                                </a>
+                              </span>
+                            ))}
+                            {l.status !== 'declinado' && l.status !== 'convertido' ? (
+                              <button
+                                type="button"
+                                className="btn-link-sm"
+                                title="Marcar esse lead como declinado (telefone ou e-mail inválido) — use quando o número der errado/indisponível no WhatsApp"
+                                onClick={() => {
+                                  if (window.confirm(`Marcar "${l.nome}" como declinado por telefone/e-mail inválido?`)) marcarNumeroInvalido(l);
+                                }}
+                                style={{ fontSize: 11, color: 'var(--danger, #c0392b)', whiteSpace: 'nowrap', background: 'none', border: 'none', padding: 0, textDecoration: 'underline', cursor: 'pointer' }}
+                              >
+                                nº inválido?
+                              </button>
+                            ) : null}
+                            {CARD_DIVULGACAO_POR_ORIGEM[l.origem] ? (
+                              cardCopiadoStatus[l.id] === 'ok' ? (
+                                <span style={{ fontSize: 11, color: 'var(--success, #1a7f37)', whiteSpace: 'nowrap' }}>
+                                  card copiado — cole com Ctrl+V
+                                </span>
+                              ) : (
+                                <a
+                                  href={CARD_DIVULGACAO_POR_ORIGEM[l.origem]}
+                                  download
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title={
+                                    cardCopiadoStatus[l.id] === 'falhou'
+                                      ? 'Não deu pra copiar automaticamente nesse navegador — baixe o card aqui pra anexar manualmente'
+                                      : 'Baixar o card de divulgação pra anexar na conversa, caso a cópia automática não funcione'
+                                  }
+                                  style={{ fontSize: 11, textDecoration: 'underline', whiteSpace: 'nowrap' }}
+                                >
+                                  {cardCopiadoStatus[l.id] === 'falhou' ? 'baixar card' : 'card'}
+                                </a>
+                              )
+                            ) : null}
+                          </div>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className="row-sub" style={{ maxWidth: 170, overflowWrap: 'break-word' }}>
+                        {l.email || '—'}
+                      </td>
+                      <td className="row-sub">{ORIGEM_LABEL[l.origem] || ORIGEM_LABEL.outro}</td>
+                      <td style={{ maxWidth: 110, overflowWrap: 'break-word' }}>{l.vaga_id ? vagaNome(l.vaga_id) : '—'}</td>
+                      <td className="row-sub" style={{ maxWidth: 110, overflowWrap: 'break-word' }}>
+                        {l.localidade || '—'}
+                      </td>
+                      <td className="row-sub" style={{ maxWidth: 110, overflowWrap: 'break-word' }}>
+                        {l.bairro || '—'}
+                      </td>
+                      <td>
+                        <span className={`pill ${st.cls}`}>
+                          <span className="pill-dot" />
+                          {st.label}
+                        </span>
+                        {l.status === 'convertido' && jaCandidatou(l.id) ? (
+                          <div style={{ marginTop: 4 }}>
+                            <span className="pill pill-info">
+                              <span className="pill-dot" />
+                              Candidatura recebida
+                            </span>
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="row-sub">{fmtData(l.criado_em?.slice(0, 10))}</td>
+                      <td style={{ maxWidth: 230 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                          {l.status === 'convertido' ? (
+                            <div className="link-box" style={{ maxWidth: 230 }}>
+                              <code>{`${baseUrl}/p/candidatura/${l.vaga_id}?lead=${l.token}`}</code>
+                              <a
+                                className="btn btn-ghost btn-sm"
+                                href={`${baseUrl}/p/candidatura/${l.vaga_id}?lead=${l.token}`}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Abrir
+                              </a>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {l.status !== 'novo' ? (
+                                <form method="POST" action={`/api/leads/${l.id}/status`}>
+                                  <input type="hidden" name="status" value="novo" />
+                                  <button className="btn btn-ghost btn-sm" type="submit">
+                                    Marcar como novo
+                                  </button>
+                                </form>
+                              ) : null}
+                              {l.status !== 'sem_contato' ? (
+                                <form method="POST" action={`/api/leads/${l.id}/status`}>
+                                  <input type="hidden" name="status" value="sem_contato" />
+                                  <button className="btn btn-ghost btn-sm" type="submit">
+                                    Sem contato
+                                  </button>
+                                </form>
+                              ) : null}
+                              {l.status !== 'declinado' ? (
+                                <button className="btn btn-ghost btn-sm" type="button" onClick={() => setDeclinandoId(l.id)}>
+                                  Declinar
+                                </button>
+                              ) : null}
+                              <button className="btn btn-outline btn-sm" type="button" onClick={() => setEvoluindoId(l.id)}>
+                                Evoluir para entrevista
+                              </button>
+                            </div>
+                          )}
+                          <button className="btn btn-ghost btn-sm" type="button" onClick={() => setEditandoId(l.id)}>
+                            Editar dados
+                          </button>
+                          <button className="btn btn-ghost btn-sm" type="button" onClick={() => setTimelineId(timelineId === l.id ? null : l.id)}>
+                            {timelineId === l.id ? 'Ocultar histórico' : 'Ver histórico'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>,
+                  ];
+                  if (timelineId === l.id) {
+                    linhas.push(<TimelineLead key={`${l.id}-timeline`} eventos={eventosDoLead(l.id)} />);
+                  }
+                  return linhas;
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+        {leadsExibidos.length > LEADS_POR_PAGINA ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderTop: '1px solid var(--border, #e5e5ea)' }}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={paginaLeadsAtual <= 1}
+              onClick={() => setPaginaLeads((p) => Math.max(1, p - 1))}
+            >
+              ← Anterior
+            </button>
+            <span style={{ fontSize: 12.3, color: 'var(--ink-faint)' }}>
+              Página {paginaLeadsAtual} de {totalPaginasLeads} · {leadsExibidos.length} leads {emBuscaTelefone ? 'encontrados' : 'nessa aba'}
+            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={paginaLeadsAtual >= totalPaginasLeads}
+              onClick={() => setPaginaLeads((p) => Math.min(totalPaginasLeads, p + 1))}
+            >
+              Próxima →
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </Layout>
+  );
+}
+
+export async function getServerSideProps(context) {
+  const { usuario, redirect } = await requireUsuario(context);
+  if (!usuario) return { redirect };
+  let [leads, vagas, eventos, candidatos] = await Promise.all([
+    getLeads(),
+    getVagas(),
+    getLeadEventosRecentes(90),
+    getCandidatosComEntrevista(),
+  ]);
+  // Gerente só vê leads das vagas em que é responsável — um lead ainda sem vaga definida não é
+  // "da equipe" de ninguém, então fica de fora pra ele (continua visível pro admin).
+  if (usuario.tipo === 'gerente') {
+    const vagaIds = await getVagaIdsDoGerente(usuario.pessoaId);
+    leads = leads.filter((l) => l.vaga_id && vagaIds.includes(l.vaga_id));
+    vagas = vagas.filter((v) => vagaIds.includes(v.id));
+    candidatos = candidatos.filter((c) => c.vaga_id && vagaIds.includes(c.vaga_id));
+    const leadIds = new Set(leads.map((l) => l.id));
+    eventos = eventos.filter((e) => leadIds.has(e.lead_id));
+  }
+  const proto = context.req.headers['x-forwarded-proto'] || 'https';
+  const baseUrl = `${proto}://${context.req.headers.host}`;
+  return { props: { leads, vagas, eventos, candidatos, baseUrl, erro: context.query.erro === '1', usuario } };
+}
