@@ -3,7 +3,17 @@ import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import { requireUsuario, getVagaIdsDoGerente } from '../../lib/sessaoUsuario';
 import { getLeads, getVagas, getLeadEventosRecentes, getCandidatosComEntrevista } from '../../lib/data';
-import { STATUS_LEAD, STATUS_CANDIDATO, ORIGEM_LABEL, ORIGEM_ORDEM, MOTIVOS_DECLINIO_LEAD, initials, fmtData } from '../../lib/domain';
+import {
+  STATUS_LEAD,
+  STATUS_CANDIDATO,
+  ORIGEM_LABEL,
+  ORIGEM_ORDEM,
+  MOTIVOS_DECLINIO_LEAD,
+  initials,
+  fmtData,
+  separarLocalidade,
+  classificarLocalidade,
+} from '../../lib/domain';
 import { Icon } from '../../components/icons';
 
 const LABEL_TIPO_EVENTO = {
@@ -1099,7 +1109,7 @@ function MarcarContatadosWhatsapp() {
 function EditarForm({ lead, vagas, onCancel }) {
   return (
     <tr>
-      <td colSpan={10} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+      <td colSpan={11} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
         <form method="POST" action={`/api/leads/${lead.id}/editar`} style={{ padding: '14px 16px' }}>
           <div className="field">
             <label>Nome</label>
@@ -1159,7 +1169,7 @@ function EditarForm({ lead, vagas, onCancel }) {
 function EvoluirForm({ lead, vagas, onCancel }) {
   return (
     <tr>
-      <td colSpan={10} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+      <td colSpan={11} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
         <form method="POST" action={`/api/leads/${lead.id}/gerar-link`} style={{ padding: '14px 16px' }}>
           <div className="field">
             <label>Vaga de interesse</label>
@@ -1196,7 +1206,7 @@ function DeclinarForm({ lead, onCancel }) {
   const outro = motivo === 'Outro';
   return (
     <tr>
-      <td colSpan={10} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
+      <td colSpan={11} style={{ background: 'var(--surface-2, #f7f7fa)', padding: 0 }}>
         <form method="POST" action={`/api/leads/${lead.id}/status`} style={{ padding: '14px 16px' }}>
           <input type="hidden" name="status" value="declinado" />
           <div className="field">
@@ -1233,7 +1243,7 @@ function DeclinarForm({ lead, onCancel }) {
 function TimelineLead({ eventos }) {
   return (
     <tr>
-      <td colSpan={10} style={{ background: 'var(--surface-2, #f7f7fa)', padding: '12px 16px' }}>
+      <td colSpan={11} style={{ background: 'var(--surface-2, #f7f7fa)', padding: '12px 16px' }}>
         {eventos.length === 0 ? (
           <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>Sem eventos registrados ainda.</div>
         ) : (
@@ -1280,7 +1290,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   // status tem sua própria aba, pra nada ficar escondido dentro de um "outros" genérico.
   const [abaLeads, setAbaLeads] = useState('novo');
   const [filtroOrigem, setFiltroOrigem] = useState('todas');
-  const [filtroLocalidade, setFiltroLocalidade] = useState('todas');
+  const [filtroEstado, setFiltroEstado] = useState('todas');
+  const [filtroCidade, setFiltroCidade] = useState('todas');
+  const [filtroBairro, setFiltroBairro] = useState('todas');
   const [filtroVaga, setFiltroVaga] = useState('todas');
   // Busca por telefone: digita qualquer trecho do número e encontra o lead direto, não importa
   // em qual aba (status) ele está hoje — pensado pra quando você já sabe o contato e só quer
@@ -1293,6 +1305,13 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   // pesada e travava o navegador. Volta pra página 1 sempre que a aba ou os filtros mudam, senão
   // dava pra ficar "preso" numa página 40 que não existe mais depois de trocar de aba.
   const [paginaLeads, setPaginaLeads] = useState(1);
+  // Seleção múltipla (só admin): ids dos leads marcados, pra declinar vários de uma vez.
+  const [selecionados, setSelecionados] = useState(() => new Set());
+  const [motivoLote, setMotivoLote] = useState(MOTIVOS_DECLINIO_LEAD[0]);
+  const [observacaoLote, setObservacaoLote] = useState('');
+  const [executandoLote, setExecutandoLote] = useState(false);
+  const [erroLote, setErroLote] = useState('');
+  const [avisoLote, setAvisoLote] = useState('');
   const LEADS_POR_PAGINA = 50;
 
   const vagaNome = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
@@ -1359,7 +1378,20 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   ];
   // Localidade é texto livre (vem do cadastro/importação), não um enum fixo como origem — então
   // a lista de opções do filtro é montada a partir do que realmente existe nos leads.
-  const localidadesDisponiveis = Array.from(new Set(leads.map((l) => l.localidade).filter(Boolean))).sort((a, b) =>
+  // Estado, cidade e bairro saem daí: a localidade no formato "Cidade - UF" é separada em duas
+  // partes; o bairro vem da coluna própria. Cidade só lista as cidades do estado escolhido.
+  const estadosDisponiveis = Array.from(new Set(leads.map((l) => separarLocalidade(l.localidade).estado).filter(Boolean))).sort(
+    (a, b) => a.localeCompare(b, 'pt-BR')
+  );
+  const cidadesDisponiveis = Array.from(
+    new Set(
+      leads
+        .map((l) => separarLocalidade(l.localidade))
+        .filter((x) => x.cidade && (filtroEstado === 'todas' || x.estado === filtroEstado))
+        .map((x) => x.cidade)
+    )
+  ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const bairrosDisponiveis = Array.from(new Set(leads.map((l) => l.bairro).filter(Boolean))).sort((a, b) =>
     a.localeCompare(b, 'pt-BR')
   );
   // Igual à localidade: a lista de opções do filtro de vaga só mostra vagas que realmente têm
@@ -1374,7 +1406,9 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const leadsFiltrados = leads.filter(
     (l) =>
       (filtroOrigem === 'todas' || l.origem === filtroOrigem) &&
-      (filtroLocalidade === 'todas' || l.localidade === filtroLocalidade) &&
+      (filtroEstado === 'todas' || separarLocalidade(l.localidade).estado === filtroEstado) &&
+      (filtroCidade === 'todas' || separarLocalidade(l.localidade).cidade === filtroCidade) &&
+      (filtroBairro === 'todas' || l.bairro === filtroBairro) &&
       (filtroVaga === 'todas' || (filtroVaga === '__sem_vaga__' ? !l.vaga_id : l.vaga_id === filtroVaga))
   );
   // Contagem de cada aba já considera os filtros de origem/localidade ativos, pra não mostrar um
@@ -1395,6 +1429,89 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
     (paginaLeadsAtual - 1) * LEADS_POR_PAGINA,
     paginaLeadsAtual * LEADS_POR_PAGINA
   );
+
+  // Listas da seleção rápida: consideram a base toda (não só a aba atual) e só leads ainda em
+  // aberto — quem já foi declinado ou virou candidato fica de fora.
+  const ABERTOS = ['novo', 'em_tratamento', 'sem_contato'];
+  const idsForaDoEstado = leads
+    .filter((l) => ABERTOS.includes(l.status) && classificarLocalidade(l.localidade) === 'fora_do_estado')
+    .map((l) => l.id);
+  const idsForaDaRegiao = leads
+    .filter((l) => ABERTOS.includes(l.status) && classificarLocalidade(l.localidade) === 'fora_da_regiao')
+    .map((l) => l.id);
+  const idsDaPagina = leadsDaPagina.map((l) => l.id);
+  const todosDaPaginaSelecionados = idsDaPagina.length > 0 && idsDaPagina.every((id) => selecionados.has(id));
+
+  function alternarSelecionado(id) {
+    setSelecionados((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(id)) novo.delete(id);
+      else novo.add(id);
+      return novo;
+    });
+  }
+
+  function alternarPagina() {
+    setSelecionados((atual) => {
+      const novo = new Set(atual);
+      if (todosDaPaginaSelecionados) idsDaPagina.forEach((id) => novo.delete(id));
+      else idsDaPagina.forEach((id) => novo.add(id));
+      return novo;
+    });
+  }
+
+  // Substitui a seleção atual pela lista escolhida e já preenche o motivo e a observação do
+  // histórico (ex.: "Fora do estado (não é RS)").
+  function selecionarLote(ids, motivo, observacao) {
+    setSelecionados(new Set(ids));
+    setMotivoLote(motivo);
+    setObservacaoLote(observacao);
+    setAvisoLote('');
+    setErroLote('');
+  }
+
+  function limparSelecao() {
+    setSelecionados(new Set());
+    setObservacaoLote('');
+    setErroLote('');
+  }
+
+  async function declinarSelecionados() {
+    const ids = Array.from(selecionados);
+    if (ids.length === 0) return;
+    const ok = window.confirm(
+      `Declinar ${ids.length} lead(s) com o motivo "${motivoLote}"? Eles saem do funil, e cada um fica com esse registro no histórico.`
+    );
+    if (!ok) return;
+    setExecutandoLote(true);
+    setErroLote('');
+    setAvisoLote('');
+    try {
+      const r = await fetch('/api/leads/declinar-selecionados', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, motivo: motivoLote, observacao: observacaoLote, executar: true }),
+      });
+      const json = await r.json();
+      if (!r.ok) {
+        setErroLote(json.error || 'Não foi possível declinar os leads.');
+      } else {
+        const extras = [
+          json.jaDeclinados ? `${json.jaDeclinados} já estavam declinados.` : '',
+          json.jaConvertidos ? `${json.jaConvertidos} já viraram candidatos e não foram alterados.` : '',
+        ]
+          .filter(Boolean)
+          .join(' ');
+        setAvisoLote(`${json.totalAtualizados} lead(s) declinado(s). ${extras}`.trim());
+        limparSelecao();
+        router.replace(router.asPath, undefined, { scroll: false });
+      }
+    } catch {
+      setErroLote('Falha de conexão. Tente novamente.');
+    } finally {
+      setExecutandoLote(false);
+    }
+  }
 
   const hojeStr = new Date().toISOString().slice(0, 10);
   const contatosHoje = eventos.filter((e) => e.tipo === 'status' && e.criado_em?.slice(0, 10) === hojeStr).length;
@@ -1638,17 +1755,48 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
           ))}
         </select>
         <select
-          style={{ maxWidth: 220 }}
-          value={filtroLocalidade}
+          style={{ maxWidth: 160 }}
+          value={filtroEstado}
           onChange={(e) => {
-            setFiltroLocalidade(e.target.value);
+            setFiltroEstado(e.target.value);
+            setFiltroCidade('todas');
             setPaginaLeads(1);
           }}
         >
-          <option value="todas">Todas as localidades</option>
-          {localidadesDisponiveis.map((loc) => (
-            <option key={loc} value={loc}>
-              {loc}
+          <option value="todas">Todos os estados</option>
+          {estadosDisponiveis.map((uf) => (
+            <option key={uf} value={uf}>
+              {uf}
+            </option>
+          ))}
+        </select>
+        <select
+          style={{ maxWidth: 200 }}
+          value={filtroCidade}
+          onChange={(e) => {
+            setFiltroCidade(e.target.value);
+            setPaginaLeads(1);
+          }}
+        >
+          <option value="todas">Todas as cidades</option>
+          {cidadesDisponiveis.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <select
+          style={{ maxWidth: 200 }}
+          value={filtroBairro}
+          onChange={(e) => {
+            setFiltroBairro(e.target.value);
+            setPaginaLeads(1);
+          }}
+        >
+          <option value="todas">Todos os bairros</option>
+          {bairrosDisponiveis.map((b) => (
+            <option key={b} value={b}>
+              {b}
             </option>
           ))}
         </select>
@@ -1668,13 +1816,15 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
           ))}
           {temLeadsSemVaga ? <option value="__sem_vaga__">(sem vaga)</option> : null}
         </select>
-        {filtroOrigem !== 'todas' || filtroLocalidade !== 'todas' || filtroVaga !== 'todas' || buscaTelefone ? (
+        {filtroOrigem !== 'todas' || filtroEstado !== 'todas' || filtroCidade !== 'todas' || filtroBairro !== 'todas' || filtroVaga !== 'todas' || buscaTelefone ? (
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => {
               setFiltroOrigem('todas');
-              setFiltroLocalidade('todas');
+              setFiltroEstado('todas');
+              setFiltroCidade('todas');
+              setFiltroBairro('todas');
               setFiltroVaga('todas');
               setBuscaTelefone('');
               setPaginaLeads(1);
@@ -1684,6 +1834,70 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
           </button>
         ) : null}
       </div>
+      {souAdmin ? (
+        <div className="card" style={{ marginBottom: 12, padding: '12px 16px' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <strong style={{ fontSize: 13 }}>
+              {selecionados.size > 0 ? `${selecionados.size} lead(s) selecionado(s)` : 'Nenhum lead selecionado'}
+            </strong>
+            <button
+              className="btn btn-outline btn-sm"
+              type="button"
+              title="Substitui a seleção pelos leads em aberto com localidade fora do RS, de todas as abas"
+              onClick={() => selecionarLote(idsForaDoEstado, 'Localização incompatível', 'Fora do estado (não é RS)')}
+              disabled={idsForaDoEstado.length === 0}
+            >
+              Selecionar fora do RS ({idsForaDoEstado.length})
+            </button>
+            <button
+              className="btn btn-outline btn-sm"
+              type="button"
+              title="Substitui a seleção pelos leads em aberto no RS fora da região de atuação (Porto Alegre e Canoas), de todas as abas"
+              onClick={() =>
+                selecionarLote(idsForaDaRegiao, 'Localização incompatível', 'Fora da região de atuação (Porto Alegre e Canoas)')
+              }
+              disabled={idsForaDaRegiao.length === 0}
+            >
+              Selecionar fora da região ({idsForaDaRegiao.length})
+            </button>
+            {selecionados.size > 0 ? (
+              <>
+                <select
+                  style={{ maxWidth: 300 }}
+                  value={motivoLote}
+                  onChange={(e) => {
+                    setMotivoLote(e.target.value);
+                    setObservacaoLote('');
+                  }}
+                >
+                  {MOTIVOS_DECLINIO_LEAD.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+                <button className="btn btn-primary btn-sm" type="button" onClick={declinarSelecionados} disabled={executandoLote}>
+                  {executandoLote ? 'Declinando...' : `Declinar ${selecionados.size} selecionado(s)`}
+                </button>
+                <button className="btn btn-ghost btn-sm" type="button" onClick={limparSelecao} disabled={executandoLote}>
+                  Limpar seleção
+                </button>
+              </>
+            ) : null}
+          </div>
+          {observacaoLote ? (
+            <div className="hint" style={{ marginTop: 6 }}>
+              Fica registrado no histórico de cada lead: "{motivoLote} — {observacaoLote}"
+            </div>
+          ) : null}
+          {erroLote ? <div className="note" style={{ marginTop: 8 }}>{erroLote}</div> : null}
+          {avisoLote ? (
+            <div className="note" style={{ marginTop: 8, borderColor: 'var(--success)' }}>
+              {avisoLote}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {emBuscaTelefone ? (
         <div className="hint" style={{ marginBottom: 12 }}>
           Mostrando resultados da busca por telefone em todas as abas/status — apague o campo de busca pra voltar a navegar por aba.
@@ -1713,7 +1927,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             <div className="empty">
               {emBuscaTelefone
                 ? 'Nenhum lead encontrado com esse telefone.'
-                : filtroOrigem !== 'todas' || filtroLocalidade !== 'todas' || filtroVaga !== 'todas'
+                : filtroOrigem !== 'todas' || filtroEstado !== 'todas' || filtroCidade !== 'todas' || filtroBairro !== 'todas' || filtroVaga !== 'todas'
                 ? 'Nenhum lead encontrado com esses filtros.'
                 : abaLeads === 'novo'
                 ? 'Nenhum lead sem tratar — tudo em dia 🎉'
@@ -1723,6 +1937,16 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             <table className="table-compact">
               <thead>
                 <tr>
+                  <th style={{ width: 36 }}>
+                    {souAdmin ? (
+                      <input
+                        type="checkbox"
+                        checked={todosDaPaginaSelecionados}
+                        onChange={alternarPagina}
+                        title="Selecionar todos os leads desta página"
+                      />
+                    ) : null}
+                  </th>
                   <th>Lead</th>
                   <th>Telefone</th>
                   <th>E-mail</th>
@@ -1749,6 +1973,16 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                   }
                   const linhas = [
                     <tr key={l.id}>
+                      <td>
+                        {souAdmin ? (
+                          <input
+                            type="checkbox"
+                            checked={selecionados.has(l.id)}
+                            onChange={() => alternarSelecionado(l.id)}
+                            aria-label={`Selecionar ${l.nome}`}
+                          />
+                        ) : null}
+                      </td>
                       <td>
                         <div className="cell-person">
                           <div className="mini-avatar">{initials(l.nome)}</div>
