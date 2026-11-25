@@ -103,8 +103,10 @@ async function copiarCardParaClipboard(urlCard) {
 // Abordagem para leads de cidades específicas (pedido do Pedro): vale para todos os leads dessas
 // cidades, independente da origem. Prioridade: vaga específica > localidade > origem > padrão.
 const CIDADES_ABORDAGEM_ESPECIAL = ['Canoas', 'Esteio', 'Sapucaia do Sul', 'São Leopoldo', 'Novo Hamburgo'];
-const MENSAGEM_ABORDAGEM_CIDADES_ESPECIAIS =
-  'Olá, tudo bem? Aqui é o Pedro, do RH da Tenda Vendas! Encontrei seu perfil na nossa busca por profissionais de Canoas e região e achei que você poderia se interessar por uma das nossas vagas abertas: Corretor(a) de Imóveis ou Gerente Comercial Imobiliário.\nQual delas faz mais sentido pra você hoje? Se quiser conhecer as duas, te conto rapidinho como cada uma funciona.';
+function mensagemAbordagemCidadesEspeciais(primeiroNome) {
+  const saudacao = primeiroNome ? `Olá, ${primeiroNome}! Tudo bem?` : 'Olá! Tudo bem?';
+  return `${saudacao} Aqui é o Pedro, do RH da Tenda Vendas! Encontrei seu perfil na nossa busca por profissionais de Canoas e região e achei que você poderia se interessar por uma das nossas vagas abertas: Corretor(a) de Imóveis ou Gerente Comercial Imobiliário.\nQual delas faz mais sentido pra você hoje? Se quiser conhecer as duas, te conto rapidinho como cada uma funciona.`;
+}
 
 function cidadeEspecialDaLocalidade(localidade) {
   const norm = (t) => (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -122,8 +124,8 @@ function linkWhatsapp(telefone, nome, origem, vagaId, baseUrl, localidade) {
   const mensagem = mensagemPorVaga
     ? mensagemPorVaga(primeiroNome, baseUrl)
     : cidadeEspecialDaLocalidade(localidade)
-    ? MENSAGEM_ABORDAGEM_CIDADES_ESPECIAIS
-    : (MENSAGEM_ABORDAGEM_POR_ORIGEM[origem] || mensagemAbordagemPadrao)(primeiroNome);
+    ? mensagemAbordagemCidadesEspeciais(primeiroNome)
+    :(MENSAGEM_ABORDAGEM_POR_ORIGEM[origem] || mensagemAbordagemPadrao)(primeiroNome);
   return `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
 }
 
