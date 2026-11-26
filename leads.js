@@ -100,7 +100,21 @@ async function copiarCardParaClipboard(urlCard) {
 // mensagem de abordagem pronta (nome do lead incluso), pra abrir o WhatsApp direto na
 // conversa com o texto só esperando o "Enviar". A mensagem muda conforme a vaga do lead
 // (prioridade, quando configurada acima) ou, na falta disso, conforme a origem do lead.
-function linkWhatsapp(telefone, nome, origem, vagaId, baseUrl) {
+// Abordagem para leads de cidades específicas (pedido do Pedro): vale para todos os leads dessas
+// cidades, independente da origem. Prioridade: vaga específica > localidade > origem > padrão.
+const CIDADES_ABORDAGEM_ESPECIAL = ['Canoas', 'Esteio', 'Sapucaia do Sul', 'São Leopoldo', 'Novo Hamburgo'];
+function mensagemAbordagemCidadesEspeciais(primeiroNome) {
+  const saudacao = primeiroNome ? `Olá, ${primeiroNome}! Tudo bem?` : 'Olá! Tudo bem?';
+  return `${saudacao} Aqui é o Pedro, do RH da Tenda Vendas! Encontrei seu perfil na nossa busca por profissionais de Canoas e região e achei que você poderia se interessar por uma das nossas vagas abertas: Corretor(a) de Imóveis ou Gerente Comercial Imobiliário.\nQual delas faz mais sentido pra você hoje? Se quiser conhecer as duas, te conto rapidinho como cada uma funciona.`;
+}
+
+function cidadeEspecialDaLocalidade(localidade) {
+  const norm = (t) => (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const cidade = norm(separarLocalidade(localidade).cidade);
+  return CIDADES_ABORDAGEM_ESPECIAL.some((c) => norm(c) === cidade);
+}
+
+function linkWhatsapp(telefone, nome, origem, vagaId, baseUrl, localidade) {
   if (!telefone) return null;
   const digitos = telefone.replace(/\D/g, '');
   if (!digitos) return null;
@@ -109,7 +123,9 @@ function linkWhatsapp(telefone, nome, origem, vagaId, baseUrl) {
   const mensagemPorVaga = vagaId && MENSAGEM_ABORDAGEM_POR_VAGA[vagaId];
   const mensagem = mensagemPorVaga
     ? mensagemPorVaga(primeiroNome, baseUrl)
-    : (MENSAGEM_ABORDAGEM_POR_ORIGEM[origem] || mensagemAbordagemPadrao)(primeiroNome);
+    : cidadeEspecialDaLocalidade(localidade)
+    ? mensagemAbordagemCidadesEspeciais(primeiroNome)
+    :(MENSAGEM_ABORDAGEM_POR_ORIGEM[origem] || mensagemAbordagemPadrao)(primeiroNome);
   return `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
 }
 
@@ -1667,11 +1683,16 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
         </div>
       </div>
 
-      <div className="grid grid-3" style={{ marginTop: 14 }}>
+      <div className="grid grid-4" style={{ marginTop: 14 }}>
         <div className="stat">
           <div className="label">Total de leads</div>
           <div className="value num">{total}</div>
           <div className="sub">Cadastrados no funil</div>
+        </div>
+        <div className="stat">
+          <div className="label">Em tratamento</div>
+          <div className="value num">{porStatus.em_tratamento}</div>
+          <div className="sub">Já em contato, sem decisão ainda</div>
         </div>
         <div className="stat">
           <div className="label">Contatos hoje</div>
@@ -1999,7 +2020,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                               <span key={`${tel}-${idx}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 <span>{tel}</span>
                                 <a
-                                  href={linkWhatsapp(tel, l.nome, l.origem, l.vaga_id, baseUrl)}
+                                  href={linkWhatsapp(tel, l.nome, l.origem, l.vaga_id, baseUrl, l.localidade)}
                                   target="_blank"
                                   rel="noreferrer"
                                   title={
