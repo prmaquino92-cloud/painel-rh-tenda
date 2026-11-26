@@ -1683,11 +1683,16 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
         </div>
       </div>
 
-      <div className="grid grid-3" style={{ marginTop: 14 }}>
+      <div className="grid grid-4" style={{ marginTop: 14 }}>
         <div className="stat">
           <div className="label">Total de leads</div>
           <div className="value num">{total}</div>
           <div className="sub">Cadastrados no funil</div>
+        </div>
+        <div className="stat">
+          <div className="label">Em tratamento</div>
+          <div className="value num">{porStatus.em_tratamento}</div>
+          <div className="sub">Já em contato, sem decisão ainda</div>
         </div>
         <div className="stat">
           <div className="label">Contatos hoje</div>
