@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
 import { supabaseAdmin } from '../../../lib/supabase';
 import { carregarUsuario } from '../../../lib/sessaoUsuario';
-import { getVagas, getLeads } from '../../../lib/data';
+import { getVagas, getLeads, getLeadVagas } from '../../../lib/data';
 import { ORIGEM_LABEL, ORIGEM_ORDEM, STATUS_LEAD, STATUS_CANDIDATO, limparLocalidade } from '../../../lib/domain';
 import { normalizarXlsxNamespacePrefixado } from '../../../lib/xlsxFix';
 
@@ -112,6 +112,7 @@ export default async function handler(req, res) {
 
   const vagas = await getVagas();
   const vagaPorTitulo = new Map(vagas.map((v) => [v.titulo.trim().toLowerCase(), v.id]));
+  const tituloPorVagaId = new Map(vagas.map((v) => [v.id, v.titulo]));
 
   const sb = supabaseAdmin();
 
@@ -119,6 +120,25 @@ export default async function handler(req, res) {
   // e para comparar, campo a campo, com o que vem na planilha.
   // leads vem de getLeads() (já paginado por causa do limite de 1000 linhas do Supabase).
   const leadsExistentes = await getLeads();
+
+  // Todas as vagas em que cada lead já aparece: a principal (leads.vaga_id) + as adicionais já
+  // registradas em lead_vagas. Se a tabela ainda não existir no banco, segue sem ela (só não
+  // registra vagas adicionais nesta importação) em vez de travar a importação inteira.
+  let tabelaLeadVagasOk = true;
+  let leadVagasExistentes = [];
+  try {
+    leadVagasExistentes = await getLeadVagas();
+  } catch {
+    tabelaLeadVagasOk = false;
+  }
+  const vagasDoLead = new Map();
+  const juntarVaga = (leadId, vagaId) => {
+    if (!leadId || !vagaId) return;
+    if (!vagasDoLead.has(leadId)) vagasDoLead.set(leadId, new Set());
+    vagasDoLead.get(leadId).add(vagaId);
+  };
+  leadsExistentes.forEach((l) => juntarVaga(l.id, l.vaga_id));
+  leadVagasExistentes.forEach((lv) => juntarVaga(lv.lead_id, lv.vaga_id));
 
   // candidatos não tem uma função paginada pronta — busca aqui do mesmo jeito (páginas de 1000).
   const candidatosExistentes = [];
@@ -162,7 +182,7 @@ export default async function handler(req, res) {
   leadsExistentes.forEach((l) => {
     const t = normTelefone(l.telefone);
     const e = normEmail(l.email);
-    const entrada = { registro: l, origemLinha: null };
+    const entrada = { registro: l, origemLinha: null, vagas: vagasDoLead.get(l.id) || new Set() };
     if (t && !leadPorTelefone.has(t)) leadPorTelefone.set(t, entrada);
     if (e && !leadPorEmail.has(e)) leadPorEmail.set(e, entrada);
   });
@@ -173,6 +193,9 @@ export default async function handler(req, res) {
   let jaEramLeads = 0;
   let duplicadosNaPlanilha = 0;
   let registrosComLacuna = 0;
+  // { entrada, vaga_id, origem } — vagas novas de leads que já existem (ou que entram nesta
+  // planilha), gravadas em lead_vagas depois que os leads novos tiverem id.
+  const vagasAdicionais = [];
 
   linhas.forEach((linha, idx) => {
     const numLinha = idx + 2;
@@ -208,33 +231,44 @@ export default async function handler(req, res) {
       return;
     }
 
+    // Vaga desta linha (se o título bater com uma vaga cadastrada) — usada tanto pra um lead novo
+    // quanto pra registrar uma vaga adicional de quem já existe.
+    const vagaIdDaLinha = vagaTitulo ? vagaPorTitulo.get(vagaTitulo.toLowerCase()) || null : null;
+    const origemDaLinha = resolverOrigem(origemBruta);
+
     // 2) já está cadastrado como lead (ainda não evoluiu)? Inclui leads adicionados por uma
     // linha anterior desta mesma planilha, pra pegar duplicados dentro do próprio arquivo.
     const leadMatch = (telNorm && leadPorTelefone.get(telNorm)) || (emailNorm && leadPorEmail.get(emailNorm));
     if (leadMatch) {
       const faltando = camposFaltantesNoRegistro(dadosLinha, leadMatch.registro, 'lead');
+      // A mesma pessoa pode aparecer em várias vagas (o Pandapé sugere o mesmo candidato como
+      // lead em vagas diferentes). Não duplica o lead, mas guarda a vaga desta linha como vaga
+      // adicional dele, pra essa informação aparecer no histórico em vez de se perder.
+      let fraseVaga = '';
+      if (vagaIdDaLinha && tabelaLeadVagasOk && !leadMatch.vagas.has(vagaIdDaLinha)) {
+        leadMatch.vagas.add(vagaIdDaLinha);
+        vagasAdicionais.push({ entrada: leadMatch, vaga_id: vagaIdDaLinha, origem: origemDaLinha });
+        fraseVaga = ` Vaga "${tituloPorVagaId.get(vagaIdDaLinha)}" registrada como vaga adicional dele.`;
+      }
       if (leadMatch.origemLinha) {
         duplicadosNaPlanilha += 1;
         avisos.push(
-          `Linha ${numLinha}: "${nome}" é duplicado da linha ${leadMatch.origemLinha} desta mesma planilha — não importado de novo. ${fraseFaltando(faltando)}`
+          `Linha ${numLinha}: "${nome}" é duplicado da linha ${leadMatch.origemLinha} desta mesma planilha — não importado de novo.${fraseVaga} ${fraseFaltando(faltando)}`
         );
       } else {
         jaEramLeads += 1;
         if (faltando.length) registrosComLacuna += 1;
         const statusLabel = STATUS_LEAD[leadMatch.registro.status]?.label || leadMatch.registro.status;
         avisos.push(
-          `Linha ${numLinha}: "${nome}" já está cadastrado como lead (${leadMatch.registro.nome}, status: ${statusLabel}) — não importado de novo. ${fraseFaltando(faltando)}`
+          `Linha ${numLinha}: "${nome}" já está cadastrado como lead (${leadMatch.registro.nome}, status: ${statusLabel}) — não importado de novo.${fraseVaga} ${fraseFaltando(faltando)}`
         );
       }
       return;
     }
 
-    let vaga_id = null;
-    if (vagaTitulo) {
-      vaga_id = vagaPorTitulo.get(vagaTitulo.toLowerCase()) || null;
-      if (!vaga_id) avisos.push(`Linha ${numLinha}: vaga "${vagaTitulo}" não encontrada — lead importado sem vaga vinculada.`);
-    }
-    const origem = resolverOrigem(origemBruta);
+    const vaga_id = vagaIdDaLinha;
+    if (vagaTitulo && !vaga_id) avisos.push(`Linha ${numLinha}: vaga "${vagaTitulo}" não encontrada — lead importado sem vaga vinculada.`);
+    const origem = origemDaLinha;
     if (origemBruta && origem === 'outro' && !['outro', 'outros'].includes(origemBruta.toLowerCase())) {
       avisos.push(`Linha ${numLinha}: origem "${origemBruta}" não reconhecida — importado como "Outro".`);
     }
@@ -243,14 +277,14 @@ export default async function handler(req, res) {
     paraInserir.push(novoLead);
 
     // Registra essa linha aceita nos mapas de lead, pra detectar duplicatas das próximas linhas.
-    const entrada = { registro: novoLead, origemLinha: numLinha };
+    const entrada = { registro: novoLead, origemLinha: numLinha, indice: paraInserir.length - 1, vagas: new Set(vaga_id ? [vaga_id] : []) };
     if (telNorm) leadPorTelefone.set(telNorm, entrada);
     if (emailNorm) leadPorEmail.set(emailNorm, entrada);
   });
 
   const totalIgnorados = jaEramCandidatos + jaEramLeads + duplicadosNaPlanilha;
 
-  if (paraInserir.length === 0) {
+  if (paraInserir.length === 0 && vagasAdicionais.length === 0) {
     res.status(200).json({
       inseridos: 0,
       totalLinhas: linhas.length,
@@ -258,6 +292,7 @@ export default async function handler(req, res) {
       jaEramLeads,
       duplicadosNaPlanilha,
       registrosComLacuna,
+      vagasAdicionais: 0,
       avisos:
         totalIgnorados > 0
           ? avisos
@@ -266,19 +301,65 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { data: inseridos, error } = await sb.from('leads').insert(paraInserir).select();
-  if (error) {
-    res.status(500).json({ error: error.message });
-    return;
+  // Grava em lotes pra não estourar o tamanho de uma requisição em planilhas grandes.
+  async function inserirEmLotes(tabela, linhasParaGravar, { selecionar = false, upsert = null } = {}) {
+    const LOTE = 1000;
+    const gravadas = [];
+    for (let i = 0; i < linhasParaGravar.length; i += LOTE) {
+      const lote = linhasParaGravar.slice(i, i + LOTE);
+      let q = upsert ? sb.from(tabela).upsert(lote, upsert) : sb.from(tabela).insert(lote);
+      if (selecionar) q = q.select();
+      const { data, error } = await q;
+      if (error) throw error;
+      if (selecionar) gravadas.push(...(data || []));
+    }
+    return gravadas;
   }
 
-  const eventos = inseridos.map((l) => ({
-    lead_id: l.id,
-    tipo: 'criado',
-    status_novo: 'novo',
-    observacao: 'Importado via planilha.',
-  }));
-  await sb.from('lead_eventos').insert(eventos);
+  let inseridos = [];
+  if (paraInserir.length) {
+    try {
+      inseridos = await inserirEmLotes('leads', paraInserir, { selecionar: true });
+    } catch (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+    const eventos = inseridos.map((l) => ({
+      lead_id: l.id,
+      tipo: 'criado',
+      status_novo: 'novo',
+      observacao: 'Importado via planilha.',
+    }));
+    await inserirEmLotes('lead_eventos', eventos).catch(() => {});
+  }
+
+  // Vagas adicionais: resolve o id do lead (os novos desta planilha só têm id depois do insert,
+  // que devolve as linhas na mesma ordem em que foram enviadas).
+  let vagasAdicionaisGravadas = 0;
+  if (vagasAdicionais.length) {
+    const registros = [];
+    const eventosVaga = [];
+    vagasAdicionais.forEach(({ entrada, vaga_id, origem }) => {
+      const leadId = entrada.origemLinha ? inseridos[entrada.indice]?.id : entrada.registro.id;
+      if (!leadId) return;
+      registros.push({ lead_id: leadId, vaga_id, origem });
+      eventosVaga.push({
+        lead_id: leadId,
+        tipo: 'vaga_adicional',
+        observacao: `Também aparece na vaga "${tituloPorVagaId.get(vaga_id)}" (origem: ${ORIGEM_LABEL[origem] || origem}) — registrado pela importação de planilha.`,
+      });
+    });
+    try {
+      await inserirEmLotes('lead_vagas', registros, { upsert: { onConflict: 'lead_id,vaga_id', ignoreDuplicates: true } });
+      await inserirEmLotes('lead_eventos', eventosVaga);
+      vagasAdicionaisGravadas = registros.length;
+    } catch (error) {
+      avisos.unshift(`Os leads foram importados, mas não foi possível registrar as vagas adicionais: ${error.message}`);
+    }
+  }
+  if (!tabelaLeadVagasOk) {
+    avisos.unshift('A tabela de vagas adicionais (lead_vagas) ainda não existe no banco — as outras vagas de quem já está cadastrado não foram registradas nesta importação.');
+  }
 
   res.status(200).json({
     inseridos: inseridos.length,
@@ -287,6 +368,7 @@ export default async function handler(req, res) {
     jaEramLeads,
     duplicadosNaPlanilha,
     registrosComLacuna,
+    vagasAdicionais: vagasAdicionaisGravadas,
     avisos,
   });
 }

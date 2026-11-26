@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import { requireUsuario, getVagaIdsDoGerente } from '../../lib/sessaoUsuario';
-import { getLeads, getVagas, getLeadEventosRecentes, getCandidatosComEntrevista } from '../../lib/data';
+import { getLeads, getVagas, getLeadEventosRecentes, getCandidatosComEntrevista, getLeadVagas } from '../../lib/data';
 import {
   STATUS_LEAD,
   STATUS_CANDIDATO,
@@ -21,6 +21,7 @@ const LABEL_TIPO_EVENTO = {
   status: 'Status alterado',
   candidatura_recebida: 'Candidatura recebida',
   editado: 'Dados atualizados',
+  vaga_adicional: 'Outra vaga',
 };
 
 // Mensagem de abordagem padrão, usada pra todo mundo exceto as origens com mensagem própria
@@ -216,6 +217,12 @@ function ImportarLeads() {
               <li>{resultado.jaEramLeads || 0} já estavam cadastrados como lead (ainda não evoluídos) — não duplicados.</li>
               <li>{resultado.jaEramCandidatos || 0} já tinham evoluído pra candidato — não duplicados.</li>
               <li>{resultado.duplicadosNaPlanilha || 0} repetido(s) dentro da própria planilha — só o primeiro foi importado.</li>
+              {resultado.vagasAdicionais ? (
+                <li>
+                  <strong>{resultado.vagasAdicionais}</strong> vaga(s) adicional(is) registrada(s) — pessoas que aparecem em mais de uma
+                  vaga agora têm todas elas no cadastro (veja em "Ver histórico" de cada lead).
+                </li>
+              ) : null}
               {resultado.registrosComLacuna ? (
                 <li>
                   <strong>{resultado.registrosComLacuna}</strong> dos já cadastrados estão com alguma informação da planilha faltando
@@ -1256,10 +1263,15 @@ function DeclinarForm({ lead, onCancel }) {
   );
 }
 
-function TimelineLead({ eventos }) {
+function TimelineLead({ eventos, vagasDoLead = [] }) {
   return (
     <tr>
       <td colSpan={11} style={{ background: 'var(--surface-2, #f7f7fa)', padding: '12px 16px' }}>
+        {vagasDoLead.length > 1 ? (
+          <div style={{ fontSize: 12.5, marginBottom: 8 }}>
+            <b>Vagas em que aparece ({vagasDoLead.length}):</b> {vagasDoLead.join(' · ')}
+          </div>
+        ) : null}
         {eventos.length === 0 ? (
           <div style={{ fontSize: 12.5, color: 'var(--ink-soft)' }}>Sem eventos registrados ainda.</div>
         ) : (
@@ -1283,7 +1295,7 @@ function TimelineLead({ eventos }) {
   );
 }
 
-export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro, usuario }) {
+export default function Leads({ leads, vagas, eventos, candidatos, leadVagas = [], baseUrl, erro, usuario }) {
   const router = useRouter();
   const souAdmin = usuario.tipo === 'admin';
   const [showForm, setShowForm] = useState(false);
@@ -1331,6 +1343,15 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   const LEADS_POR_PAGINA = 50;
 
   const vagaNome = (id) => vagas.find((v) => v.id === id)?.titulo || '—';
+  // Outras vagas em que o mesmo lead aparece (além da principal, leads.vaga_id) — vêm da tabela
+  // lead_vagas, preenchida pela importação quando a mesma pessoa vem em mais de uma vaga.
+  const outrasVagasPorLead = new Map();
+  leadVagas.forEach((lv) => {
+    if (!outrasVagasPorLead.has(lv.lead_id)) outrasVagasPorLead.set(lv.lead_id, []);
+    outrasVagasPorLead.get(lv.lead_id).push(lv.vaga_id);
+  });
+  const outrasVagasDoLead = (l) => (outrasVagasPorLead.get(l.id) || []).filter((id, i, arr) => id !== l.vaga_id && arr.indexOf(id) === i);
+  const todasVagasDoLead = (l) => [l.vaga_id, ...outrasVagasDoLead(l)].filter(Boolean);
   const eventosDoLead = (id) => eventos.filter((e) => e.lead_id === id);
   const jaCandidatou = (id) => candidatos.some((c) => c.lead_id === id);
 
@@ -1414,7 +1435,8 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
   // algum lead vinculado (em vez de todas as vagas cadastradas), pra não poluir o menu com vagas
   // sem nenhum lead. "(sem vaga)" fica como opção separada pra quem quer ver só os leads ainda
   // sem vaga definida (ex.: os importados de planilha genérica).
-  const vagasComLeads = Array.from(new Set(leads.map((l) => l.vaga_id).filter(Boolean)));
+  const vagasComLeads = Array.from(new Set(leads.flatMap((l) => todasVagasDoLead(l))));
+  const temLeadsEmVariasVagas = leads.some((l) => outrasVagasDoLead(l).length > 0);
   const vagasDisponiveis = vagasComLeads
     .map((id) => ({ id, titulo: vagaNome(id) }))
     .sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'));
@@ -1425,7 +1447,12 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
       (filtroEstado === 'todas' || separarLocalidade(l.localidade).estado === filtroEstado) &&
       (filtroCidade === 'todas' || separarLocalidade(l.localidade).cidade === filtroCidade) &&
       (filtroBairro === 'todas' || l.bairro === filtroBairro) &&
-      (filtroVaga === 'todas' || (filtroVaga === '__sem_vaga__' ? !l.vaga_id : l.vaga_id === filtroVaga))
+      (filtroVaga === 'todas' ||
+        (filtroVaga === '__sem_vaga__'
+          ? !l.vaga_id
+          : filtroVaga === '__varias_vagas__'
+          ? outrasVagasDoLead(l).length > 0
+          : todasVagasDoLead(l).includes(filtroVaga)))
   );
   // Contagem de cada aba já considera os filtros de origem/localidade ativos, pra não mostrar um
   // número que depois não bate com o que aparece na tabela. Não considera a busca por telefone —
@@ -1831,6 +1858,7 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
             </option>
           ))}
           {temLeadsSemVaga ? <option value="__sem_vaga__">(sem vaga)</option> : null}
+          {temLeadsEmVariasVagas ? <option value="__varias_vagas__">(em mais de uma vaga)</option> : null}
         </select>
         {filtroOrigem !== 'todas' || filtroEstado !== 'todas' || filtroCidade !== 'todas' || filtroBairro !== 'todas' || filtroVaga !== 'todas' || buscaTelefone ? (
           <button
@@ -2074,7 +2102,18 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                         {l.email || '—'}
                       </td>
                       <td className="row-sub">{ORIGEM_LABEL[l.origem] || ORIGEM_LABEL.outro}</td>
-                      <td style={{ maxWidth: 110, overflowWrap: 'break-word' }}>{l.vaga_id ? vagaNome(l.vaga_id) : '—'}</td>
+                      <td style={{ maxWidth: 110, overflowWrap: 'break-word' }}>
+                        {l.vaga_id ? vagaNome(l.vaga_id) : '—'}
+                        {outrasVagasDoLead(l).length ? (
+                          <div
+                            className="row-sub"
+                            style={{ fontSize: 11, marginTop: 2 }}
+                            title={`Também aparece em: ${outrasVagasDoLead(l).map(vagaNome).join(', ')}`}
+                          >
+                            + {outrasVagasDoLead(l).length} outra(s) vaga(s)
+                          </div>
+                        ) : null}
+                      </td>
                       <td className="row-sub" style={{ maxWidth: 110, overflowWrap: 'break-word' }}>
                         {l.localidade || '—'}
                       </td>
@@ -2149,7 +2188,13 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
                     </tr>,
                   ];
                   if (timelineId === l.id) {
-                    linhas.push(<TimelineLead key={`${l.id}-timeline`} eventos={eventosDoLead(l.id)} />);
+                    linhas.push(
+                      <TimelineLead
+                        key={`${l.id}-timeline`}
+                        eventos={eventosDoLead(l.id)}
+                        vagasDoLead={todasVagasDoLead(l).map(vagaNome)}
+                      />
+                    );
                   }
                   return linhas;
                 })}
@@ -2188,11 +2233,13 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
 export async function getServerSideProps(context) {
   const { usuario, redirect } = await requireUsuario(context);
   if (!usuario) return { redirect };
-  let [leads, vagas, eventos, candidatos] = await Promise.all([
+  let [leads, vagas, eventos, candidatos, leadVagas] = await Promise.all([
     getLeads(),
     getVagas(),
     getLeadEventosRecentes(90),
     getCandidatosComEntrevista(),
+    // se a tabela lead_vagas ainda não existir no banco, a página continua funcionando sem ela
+    getLeadVagas().catch(() => []),
   ]);
   // Gerente só vê leads das vagas em que é responsável — um lead ainda sem vaga definida não é
   // "da equipe" de ninguém, então fica de fora pra ele (continua visível pro admin).
@@ -2203,8 +2250,10 @@ export async function getServerSideProps(context) {
     candidatos = candidatos.filter((c) => c.vaga_id && vagaIds.includes(c.vaga_id));
     const leadIds = new Set(leads.map((l) => l.id));
     eventos = eventos.filter((e) => leadIds.has(e.lead_id));
+    // gerente vê as outras vagas do lead só se forem vagas dele
+    leadVagas = leadVagas.filter((lv) => leadIds.has(lv.lead_id) && vagaIds.includes(lv.vaga_id));
   }
   const proto = context.req.headers['x-forwarded-proto'] || 'https';
   const baseUrl = `${proto}://${context.req.headers.host}`;
-  return { props: { leads, vagas, eventos, candidatos, baseUrl, erro: context.query.erro === '1', usuario } };
+  return { props: { leads, vagas, eventos, candidatos, leadVagas, baseUrl, erro: context.query.erro === '1', usuario } };
 }

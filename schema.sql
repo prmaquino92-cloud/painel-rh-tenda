@@ -91,6 +91,19 @@ create table if not exists lead_eventos (
   criado_em timestamptz not null default now()
 );
 
+-- Todas as vagas em que o mesmo lead aparece. leads.vaga_id continua sendo a vaga principal
+-- (usada em permissões, links e relatórios); aqui ficam registradas as outras vagas em que a
+-- mesma pessoa aparece — ex.: o Pandapé sugere o mesmo candidato como lead em várias vagas e a
+-- importação, em vez de descartar essas linhas repetidas, grava cada vaga extra aqui.
+create table if not exists lead_vagas (
+  id uuid primary key default gen_random_uuid(),
+  lead_id uuid not null references leads(id) on delete cascade,
+  vaga_id uuid not null references vagas(id) on delete cascade,
+  origem text,
+  criado_em timestamptz not null default now(),
+  unique (lead_id, vaga_id)
+);
+
 create table if not exists candidatos (
   id uuid primary key default gen_random_uuid(),
   nome text not null,
@@ -166,6 +179,8 @@ create index if not exists idx_leads_token on leads(token);
 create index if not exists idx_leads_status on leads(status);
 create index if not exists idx_lead_eventos_lead on lead_eventos(lead_id);
 create index if not exists idx_lead_eventos_criado on lead_eventos(criado_em);
+create index if not exists idx_lead_vagas_lead on lead_vagas(lead_id);
+create index if not exists idx_lead_vagas_vaga on lead_vagas(vaga_id);
 
 -- protege as tabelas: só o backend (chave secreta) acessa, nunca o navegador
 alter table unidades enable row level security;
@@ -178,3 +193,4 @@ alter table bloqueios enable row level security;
 alter table google_tokens enable row level security;
 alter table leads enable row level security;
 alter table lead_eventos enable row level security;
+alter table lead_vagas enable row level security;
