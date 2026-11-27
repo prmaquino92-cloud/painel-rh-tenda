@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import Layout from '../../components/Layout';
 import { requireUsuario, getVagaIdsDoGerente } from '../../lib/sessaoUsuario';
-import { getEntrevistasAgendadas, getCandidatosComEntrevista, getLeads, getVagas, getPessoas } from '../../lib/data';
+import { getEntrevistasAgendadas, getCandidatosComEntrevista, getLeads, getVagas, getPessoas, getLeadsChamadosDoMes } from '../../lib/data';
 import { fmtData, agoraSaoPaulo, ORIGEM_LABEL, ORIGEM_ORDEM, PAPEL_LABEL } from '../../lib/domain';
 import {
   MES_LABEL,
@@ -16,7 +16,9 @@ import {
   contratadosEDesligadosDoMes,
   pct,
   fmtPct,
+  montarLinhasMes,
 } from '../../lib/relatorios';
+import TabelaMensal from '../../components/TabelaMensal';
 
 function Tile({ label, value, sub }) {
   return (
@@ -327,6 +329,8 @@ export default function Relatorios({
   turnover,
   contratadosDesligados,
   geradoEm,
+  tabelaDias,
+  hoje,
   usuario,
 }) {
   const mesLabel = `${MES_LABEL[Number(mes.mesIso.slice(5, 7)) - 1]} de ${mes.mesIso.slice(0, 4)}`;
@@ -389,6 +393,17 @@ export default function Relatorios({
         hrefAtual={`/app/relatorios${origemAtual ? `?origem=${origemAtual}` : ''}`}
         hrefSeguinte={`/app/relatorios?semana=${semana.inicio}&mes=${mes.mesSeguinteIso}${origemAtual ? `&origem=${origemAtual}` : ''}`}
       />
+
+      <div className="section-head">
+        <div>
+          <h2>Dia a dia</h2>
+          <p>
+            {mesLabel} — leads chamados e situação das entrevistas em cada dia
+            {origemAtual ? ` — ${ORIGEM_LABEL[origemAtual]}` : ''}
+          </p>
+        </div>
+      </div>
+      <TabelaMensal mes={mes.mesIso} linhas={tabelaDias} hoje={hoje} mostrarLeads />
 
       <div className="section-head">
         <div>
@@ -519,6 +534,16 @@ export async function getServerSideProps(context) {
   const mesFim = fimDoMes(mesIso);
   const metricasMes = calcularMetricas({ entrevistas, candidatos, inicio: mesInicio, fim: mesFim, hojeIso, origem: origemAtual });
 
+  // Dia a dia do mês — mesmo recorte da tela: origem escolhida e, pro gerente, só as vagas dele
+  // (leads e entrevistas já vêm filtrados acima).
+  const eventosChamados = await getLeadsChamadosDoMes(mesIso);
+  const leadIdsDoRecorte = new Set(leads.filter((l) => !origemAtual || l.origem === origemAtual).map((l) => l.id));
+  const tabelaDias = montarLinhasMes({
+    mes: mesIso,
+    entrevistas: entrevistas.filter((e) => !origemAtual || e.candidatos?.origem === origemAtual),
+    eventosChamados: eventosChamados.filter((ev) => leadIdsDoRecorte.has(ev.lead_id)),
+  });
+
   // Por origem — chaves fixas (ORIGEM_ORDEM), toda lead/candidato sempre tem uma.
   const funilOrigem = calcularFunilAgrupado({
     leads,
@@ -609,6 +634,8 @@ export async function getServerSideProps(context) {
       turnover,
       contratadosDesligados,
       geradoEm,
+      tabelaDias,
+      hoje: hojeIso,
       usuario,
     },
   };
