@@ -18,6 +18,8 @@ import {
   gerarToken,
 } from '../../lib/domain';
 import { Icon } from '../../components/icons';
+import TabelaMensal from '../../components/TabelaMensal';
+import { montarLinhasMes } from '../../lib/relatorios';
 
 // Envia um dos formulários de ação da Agenda (Cancelar, Descartar, Marcar como realizada,
 // Não compareceu, Reagendar, Bloquear horário etc.) via fetch em vez de deixar o navegador
@@ -108,87 +110,6 @@ function podeReagendarPeloLink(e) {
 // separadas abaixo, pra não poluir a lista do que ainda precisa de ação.
 function ehFutura(e) {
   return !['realizada', 'cancelada', 'nao_compareceu'].includes(e.status);
-}
-
-const MESES_LABEL = [
-  'Janeiro',
-  'Fevereiro',
-  'Março',
-  'Abril',
-  'Maio',
-  'Junho',
-  'Julho',
-  'Agosto',
-  'Setembro',
-  'Outubro',
-  'Novembro',
-  'Dezembro',
-];
-
-// Tabela mensal: uma coluna por dia do mês e uma linha por indicador (como na planilha de referência).
-// Agendadas = total de entrevistas marcadas no dia, qualquer que seja o desfecho. Realizadas, canceladas
-// e não compareceu são o detalhamento do que aconteceu com essas entrevistas.
-function TabelaMensal({ mes, linhas, hoje, souAdmin }) {
-  const [ano, mesNum] = mes.split('-').map(Number);
-  const anterior = mesNum === 1 ? `${ano - 1}-12` : `${ano}-${String(mesNum - 1).padStart(2, '0')}`;
-  const proximo = mesNum === 12 ? `${ano + 1}-01` : `${ano}-${String(mesNum + 1).padStart(2, '0')}`;
-  const mesCurto = MESES_LABEL[mesNum - 1].slice(0, 3).toLowerCase();
-  const total = (campo) => linhas.reduce((acc, l) => acc + l[campo], 0);
-  const indicadores = [
-    souAdmin ? { chave: 'chamados', rotulo: 'Leads chamados' } : null,
-    { chave: 'agendadas', rotulo: 'Agendadas' },
-    { chave: 'realizadas', rotulo: 'Realizadas' },
-    { chave: 'canceladas', rotulo: 'Canceladas' },
-    { chave: 'naoCompareceu', rotulo: 'Não compareceu' },
-  ].filter(Boolean);
-  const celula = (valor, extra) => (
-    <td style={{ textAlign: 'center', color: valor ? undefined : 'var(--ink-faint)', ...extra }}>{valor}</td>
-  );
-  const sticky = { position: 'sticky', left: 0, background: 'var(--surface, #fff)', zIndex: 1, textAlign: 'left', whiteSpace: 'nowrap' };
-  return (
-    <div className="card" style={{ marginBottom: 18 }}>
-      <div className="card-pad" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <a className="btn btn-ghost btn-sm" href={`/app/agenda?mes=${anterior}`}>
-          ‹ Anterior
-        </a>
-        <div style={{ fontFamily: 'Sora,sans-serif', fontWeight: 600, fontSize: 15 }}>
-          {MESES_LABEL[mesNum - 1]} de {ano}
-        </div>
-        <a className="btn btn-ghost btn-sm" href={`/app/agenda?mes=${proximo}`}>
-          Próximo ›
-        </a>
-      </div>
-      <div className="table-wrap" style={{ overflowX: 'auto' }}>
-        <table style={{ width: 'auto', minWidth: '100%' }}>
-          <thead>
-            <tr>
-              <th style={{ ...sticky }} />
-              {linhas.map((l) => (
-                <th
-                  key={l.iso}
-                  style={{ textAlign: 'center', padding: '8px 6px', whiteSpace: 'nowrap', background: l.iso === hoje ? 'var(--surface-2, #f7f7fa)' : undefined }}
-                >
-                  {l.iso.slice(8, 10)}/{mesCurto}
-                </th>
-              ))}
-              <th style={{ textAlign: 'center' }}>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {indicadores.map((ind) => (
-              <tr key={ind.chave}>
-                <td className="row-title" style={{ ...sticky }}>
-                  {ind.rotulo}
-                </td>
-                {linhas.map((l) => celula(l[ind.chave], l.iso === hoje ? { background: 'var(--surface-2, #f7f7fa)' } : undefined))}
-                {celula(total(ind.chave), { fontWeight: 700 })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
 }
 
 // Formulário inline pra reagendar — troca a data/horário da entrevista (e move o evento no
@@ -558,7 +479,7 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
         </div>
       ) : null}
 
-      <TabelaMensal mes={mes} linhas={linhasMes} hoje={hoje} souAdmin={souAdmin} />
+      <TabelaMensal mes={mes} linhas={linhasMes} hoje={hoje} mostrarLeads={souAdmin} navBase="/app/agenda" />
 
       {erro ? (
         <div className="note" style={{ marginBottom: 18 }}>
@@ -794,31 +715,6 @@ async function comLinkDeReagendamento(lista, baseUrl) {
   );
 }
 
-// Monta uma linha por dia do mês. Leads chamados só para admin (a tabela de leads é dele).
-function montarLinhasMes(mes, entrevistas, eventosChamados) {
-  const [ano, mesNum] = mes.split('-').map(Number);
-  const totalDias = new Date(Date.UTC(ano, mesNum, 0)).getUTCDate();
-  const chamadosPorDia = new Map();
-  for (const ev of eventosChamados) {
-    const dia = new Date(new Date(ev.criado_em).getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    if (!chamadosPorDia.has(dia)) chamadosPorDia.set(dia, new Set());
-    chamadosPorDia.get(dia).add(ev.lead_id);
-  }
-  return Array.from({ length: totalDias }, (_, i) => {
-    const iso = `${mes}-${String(i + 1).padStart(2, '0')}`;
-    const doDia = entrevistas.filter((e) => e.data === iso);
-    return {
-      iso,
-      weekday: new Date(Date.UTC(ano, mesNum - 1, i + 1)).getUTCDay(),
-      chamados: chamadosPorDia.get(iso)?.size || 0,
-      agendadas: doDia.length,
-      realizadas: doDia.filter((e) => e.status === 'realizada').length,
-      canceladas: doDia.filter((e) => e.status === 'cancelada').length,
-      naoCompareceu: doDia.filter((e) => e.status === 'nao_compareceu').length,
-    };
-  });
-}
-
 export async function getServerSideProps(context) {
   const { usuario, redirect } = await requireUsuario(context);
   if (!usuario) return { redirect };
@@ -843,7 +739,7 @@ export async function getServerSideProps(context) {
   // sentido pro gerente (não é a agenda dele) e, por isso, nem são calculados pra ele.
   const horariosLivres = usuario.tipo === 'admin' ? await calcularHorariosLivres(entrevistas, bloqueios, google.conectado) : [];
   const eventosChamados = usuario.tipo === 'admin' ? await getLeadsChamadosDoMes(mes) : [];
-  const linhasMes = montarLinhasMes(mes, entrevistas, eventosChamados);
+  const linhasMes = montarLinhasMes({ mes, entrevistas, eventosChamados });
   return {
     props: {
       entrevistas,
