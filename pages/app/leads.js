@@ -114,6 +114,19 @@ function cidadeEspecialDaLocalidade(localidade) {
   return CIDADES_ABORDAGEM_ESPECIAL.some((c) => norm(c) === cidade);
 }
 
+const CIDADES_ABORDAGEM_POA = ['Porto Alegre', 'Alvorada', 'Viamão'];
+function mensagemAbordagemPortoAlegre(primeiroNome) {
+  const saudacao = primeiroNome ? `Olá, ${primeiroNome}! Tudo bem?` : 'Olá! Tudo bem?';
+  return `${saudacao} Aqui é o Pedro, do RH da Tenda Vendas! Encontrei seu perfil na nossa busca por profissionais de Porto Alegre e região e achei que você poderia se interessar por uma das nossas vagas abertas: Corretor(a) de Imóveis ou Gerente Comercial Imobiliário.\nQual delas faz mais sentido pra você hoje? Se quiser conhecer as duas, te conto rapidinho como cada uma funciona. 😊`;
+}
+
+function cidadePoaDaLocalidade(localidade) {
+  const norm = (t) => (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  const cidade = norm(separarLocalidade(localidade).cidade);
+  return CIDADES_ABORDAGEM_POA.some((c) => norm(c) === cidade);
+}
+
+
 function linkWhatsapp(telefone, nome, origem, vagaId, baseUrl, localidade) {
   if (!telefone) return null;
   const digitos = telefone.replace(/\D/g, '');
@@ -125,6 +138,9 @@ function linkWhatsapp(telefone, nome, origem, vagaId, baseUrl, localidade) {
     ? mensagemPorVaga(primeiroNome, baseUrl)
     : cidadeEspecialDaLocalidade(localidade)
     ? mensagemAbordagemCidadesEspeciais(primeiroNome)
+    : cidadePoaDaLocalidade(localidade)
+    ? mensagemAbordagemPortoAlegre(primeiroNome)
+
     :(MENSAGEM_ABORDAGEM_POR_ORIGEM[origem] || mensagemAbordagemPadrao)(primeiroNome);
   return `https://wa.me/${comCodigoPais}?text=${encodeURIComponent(mensagem)}`;
 }
@@ -1683,11 +1699,16 @@ export default function Leads({ leads, vagas, eventos, candidatos, baseUrl, erro
         </div>
       </div>
 
-      <div className="grid grid-3" style={{ marginTop: 14 }}>
+      <div className="grid grid-4" style={{ marginTop: 14 }}>
         <div className="stat">
           <div className="label">Total de leads</div>
           <div className="value num">{total}</div>
           <div className="sub">Cadastrados no funil</div>
+        </div>
+        <div className="stat">
+          <div className="label">Em tratamento</div>
+          <div className="value num">{porStatus.em_tratamento}</div>
+          <div className="sub">Já em contato, sem decisão ainda</div>
         </div>
         <div className="stat">
           <div className="label">Contatos hoje</div>
