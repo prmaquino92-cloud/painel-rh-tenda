@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../../components/Layout';
 import { requireUsuario, getVagaIdsDoGerente } from '../../lib/sessaoUsuario';
-import { getEntrevistasAgendadas, getBloqueios, getPessoas, getUnidades } from '../../lib/data';
+import { getEntrevistasAgendadas, getBloqueios, getPessoas, getUnidades, getLeadsChamadosDoMes } from '../../lib/data';
 import { supabaseAdmin } from '../../lib/supabase';
 import { getGoogleStatus, getBusyIntervals } from '../../lib/google';
 import {
@@ -41,7 +41,12 @@ async function enviarAcaoAgenda(ev, router, { confirmMsg, onDone } = {}) {
     erro = true;
   }
   if (onDone) onDone(erro);
-  router.replace(erro ? '/app/agenda?erro=1' : '/app/agenda', undefined, { scroll: false });
+  // mantém o mês que está sendo visto na tabela mensal (?mes=YYYY-MM) e o aviso de erro, se houver
+  const params = new URLSearchParams();
+  if (router.query.mes) params.set('mes', router.query.mes);
+  if (erro) params.set('erro', '1');
+  const qs = params.toString();
+  router.replace(`/app/agenda${qs ? `?${qs}` : ''}`, undefined, { scroll: false });
 }
 
 // Já vem com a mensagem de confirmação pronta (nome do candidato incluso), pra abrir o
@@ -105,12 +110,83 @@ function ehFutura(e) {
   return !['realizada', 'cancelada', 'nao_compareceu'].includes(e.status);
 }
 
-function isProximos7(iso) {
-  const d = new Date(`${iso}T00:00:00`);
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  const diff = (d - hoje) / 86400000;
-  return diff >= 0 && diff <= 7;
+const MESES_LABEL = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+];
+
+// Tabela com todos os dias do mês: uma linha por dia, com leads chamados e a situação das
+// entrevistas daquele dia. Navega entre meses pelo parâmetro ?mes=YYYY-MM.
+function TabelaMensal({ mes, linhas, hoje, souAdmin }) {
+  const [ano, mesNum] = mes.split('-').map(Number);
+  const anterior = mesNum === 1 ? `${ano - 1}-12` : `${ano}-${String(mesNum - 1).padStart(2, '0')}`;
+  const proximo = mesNum === 12 ? `${ano + 1}-01` : `${ano}-${String(mesNum + 1).padStart(2, '0')}`;
+  const total = (campo) => linhas.reduce((acc, l) => acc + l[campo], 0);
+  const celula = (valor) => <span style={{ color: valor ? undefined : 'var(--ink-faint)' }}>{valor}</span>;
+  return (
+    <div className="card" style={{ marginBottom: 18 }}>
+      <div className="card-pad" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <a className="btn btn-ghost btn-sm" href={`/app/agenda?mes=${anterior}`}>
+          ‹ Anterior
+        </a>
+        <div style={{ fontFamily: 'Sora,sans-serif', fontWeight: 600, fontSize: 15 }}>
+          {MESES_LABEL[mesNum - 1]} de {ano}
+        </div>
+        <a className="btn btn-ghost btn-sm" href={`/app/agenda?mes=${proximo}`}>
+          Próximo ›
+        </a>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Dia</th>
+              {souAdmin ? <th>Leads chamados</th> : null}
+              <th>Agendadas</th>
+              <th>Realizadas</th>
+              <th>Canceladas</th>
+              <th>Não compareceu</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((l) => (
+              <tr key={l.iso} style={l.iso === hoje ? { background: 'var(--surface-2, #f7f7fa)' } : undefined}>
+                <td className="row-title">
+                  {DIA_SEMANA_LABEL[l.weekday]} · {fmtData(l.iso)}
+                  {l.iso === hoje ? ' (hoje)' : ''}
+                </td>
+                {souAdmin ? <td>{celula(l.chamados)}</td> : null}
+                <td>{celula(l.agendadas)}</td>
+                <td>{celula(l.realizadas)}</td>
+                <td>{celula(l.canceladas)}</td>
+                <td>{celula(l.naoCompareceu)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td className="row-title">Total do mês</td>
+              {souAdmin ? <td className="row-title">{total('chamados')}</td> : null}
+              <td className="row-title">{total('agendadas')}</td>
+              <td className="row-title">{total('realizadas')}</td>
+              <td className="row-title">{total('canceladas')}</td>
+              <td className="row-title">{total('naoCompareceu')}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 // Formulário inline pra reagendar — troca a data/horário da entrevista (e move o evento no
@@ -403,7 +479,7 @@ function CaixinhaRecolhivel({ titulo, entrevistas, aberto, onToggle, reagendando
   );
 }
 
-export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoas, unidades, horariosLivres, erro, usuario }) {
+export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoas, unidades, horariosLivres, erro, usuario, mes, linhasMes, hoje }) {
   const router = useRouter();
   const souAdmin = usuario.tipo === 'admin';
   const [showForm, setShowForm] = useState(false);
@@ -480,34 +556,7 @@ export default function Agenda({ entrevistas, bloqueios, googleConectado, pessoa
         </div>
       ) : null}
 
-      <div className={`grid ${souAdmin ? 'grid-4' : 'grid-2'}`}>
-        <div className="stat">
-          <div className="label">Entrevistas pendentes</div>
-          <div className="value num">{futuras.length}</div>
-          <div className="sub">Ainda vão acontecer</div>
-        </div>
-        <div className="stat">
-          <div className="label">Próximos 7 dias</div>
-          <div className="value num">{futuras.filter((e) => isProximos7(e.data)).length}</div>
-          <div className="sub">A partir de hoje</div>
-        </div>
-        {souAdmin ? (
-          <>
-            <div className="stat">
-              <div className="label">Bloqueios ativos</div>
-              <div className="value num">{bloqueios.length}</div>
-              <div className="sub">Horários indisponíveis por sua escolha</div>
-            </div>
-            <div className="stat">
-              <div className="label">Responsável</div>
-              <div className="value" style={{ fontSize: 15 }}>
-                Pedro Aquino
-              </div>
-              <div className="sub">prmaquino92@gmail.com</div>
-            </div>
-          </>
-        ) : null}
-      </div>
+      <TabelaMensal mes={mes} linhas={linhasMes} hoje={hoje} souAdmin={souAdmin} />
 
       {erro ? (
         <div className="note" style={{ marginBottom: 18 }}>
@@ -743,6 +792,31 @@ async function comLinkDeReagendamento(lista, baseUrl) {
   );
 }
 
+// Monta uma linha por dia do mês. Leads chamados só para admin (a tabela de leads é dele).
+function montarLinhasMes(mes, entrevistas, eventosChamados) {
+  const [ano, mesNum] = mes.split('-').map(Number);
+  const totalDias = new Date(Date.UTC(ano, mesNum, 0)).getUTCDate();
+  const chamadosPorDia = new Map();
+  for (const ev of eventosChamados) {
+    const dia = new Date(new Date(ev.criado_em).getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    if (!chamadosPorDia.has(dia)) chamadosPorDia.set(dia, new Set());
+    chamadosPorDia.get(dia).add(ev.lead_id);
+  }
+  return Array.from({ length: totalDias }, (_, i) => {
+    const iso = `${mes}-${String(i + 1).padStart(2, '0')}`;
+    const doDia = entrevistas.filter((e) => e.data === iso);
+    return {
+      iso,
+      weekday: new Date(Date.UTC(ano, mesNum - 1, i + 1)).getUTCDay(),
+      chamados: chamadosPorDia.get(iso)?.size || 0,
+      agendadas: doDia.filter(ehFutura).length,
+      realizadas: doDia.filter((e) => e.status === 'realizada').length,
+      canceladas: doDia.filter((e) => e.status === 'cancelada').length,
+      naoCompareceu: doDia.filter((e) => e.status === 'nao_compareceu').length,
+    };
+  });
+}
+
 export async function getServerSideProps(context) {
   const { usuario, redirect } = await requireUsuario(context);
   if (!usuario) return { redirect };
@@ -753,6 +827,9 @@ export async function getServerSideProps(context) {
     getPessoas(),
     getUnidades(),
   ]);
+  const hoje = agoraSaoPaulo().toISOString().slice(0, 10);
+  const mesQuery = context.query.mes;
+  const mes = /^\d{4}-(0[1-9]|1[0-2])$/.test(mesQuery || '') ? mesQuery : hoje.slice(0, 7);
   let entrevistas = entrevistasTodas;
   if (usuario.tipo === 'gerente') {
     const vagaIds = await getVagaIdsDoGerente(usuario.pessoaId);
@@ -763,6 +840,8 @@ export async function getServerSideProps(context) {
   // "Horários livres" e bloqueios manuais refletem a SUA Google Agenda pessoal — não fazem
   // sentido pro gerente (não é a agenda dele) e, por isso, nem são calculados pra ele.
   const horariosLivres = usuario.tipo === 'admin' ? await calcularHorariosLivres(entrevistas, bloqueios, google.conectado) : [];
+  const eventosChamados = usuario.tipo === 'admin' ? await getLeadsChamadosDoMes(mes) : [];
+  const linhasMes = montarLinhasMes(mes, entrevistas, eventosChamados);
   return {
     props: {
       entrevistas,
@@ -773,6 +852,9 @@ export async function getServerSideProps(context) {
       horariosLivres,
       erro: context.query.erro === '1',
       usuario,
+      mes,
+      hoje,
+      linhasMes,
     },
   };
 }
