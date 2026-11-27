@@ -125,14 +125,26 @@ const MESES_LABEL = [
   'Dezembro',
 ];
 
-// Tabela com todos os dias do mês: uma linha por dia, com leads chamados e a situação das
-// entrevistas daquele dia. Navega entre meses pelo parâmetro ?mes=YYYY-MM.
+// Tabela mensal: uma coluna por dia do mês e uma linha por indicador (como na planilha de referência).
+// Agendadas = total de entrevistas marcadas no dia, qualquer que seja o desfecho. Realizadas, canceladas
+// e não compareceu são o detalhamento do que aconteceu com essas entrevistas.
 function TabelaMensal({ mes, linhas, hoje, souAdmin }) {
   const [ano, mesNum] = mes.split('-').map(Number);
   const anterior = mesNum === 1 ? `${ano - 1}-12` : `${ano}-${String(mesNum - 1).padStart(2, '0')}`;
   const proximo = mesNum === 12 ? `${ano + 1}-01` : `${ano}-${String(mesNum + 1).padStart(2, '0')}`;
+  const mesCurto = MESES_LABEL[mesNum - 1].slice(0, 3).toLowerCase();
   const total = (campo) => linhas.reduce((acc, l) => acc + l[campo], 0);
-  const celula = (valor) => <span style={{ color: valor ? undefined : 'var(--ink-faint)' }}>{valor}</span>;
+  const indicadores = [
+    souAdmin ? { chave: 'chamados', rotulo: 'Leads chamados' } : null,
+    { chave: 'agendadas', rotulo: 'Agendadas' },
+    { chave: 'realizadas', rotulo: 'Realizadas' },
+    { chave: 'canceladas', rotulo: 'Canceladas' },
+    { chave: 'naoCompareceu', rotulo: 'Não compareceu' },
+  ].filter(Boolean);
+  const celula = (valor, extra) => (
+    <td style={{ textAlign: 'center', color: valor ? undefined : 'var(--ink-faint)', ...extra }}>{valor}</td>
+  );
+  const sticky = { position: 'sticky', left: 0, background: 'var(--surface, #fff)', zIndex: 1, textAlign: 'left', whiteSpace: 'nowrap' };
   return (
     <div className="card" style={{ marginBottom: 18 }}>
       <div className="card-pad" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
@@ -146,43 +158,33 @@ function TabelaMensal({ mes, linhas, hoje, souAdmin }) {
           Próximo ›
         </a>
       </div>
-      <div className="table-wrap">
-        <table>
+      <div className="table-wrap" style={{ overflowX: 'auto' }}>
+        <table style={{ width: 'auto', minWidth: '100%' }}>
           <thead>
             <tr>
-              <th>Dia</th>
-              {souAdmin ? <th>Leads chamados</th> : null}
-              <th>Agendadas</th>
-              <th>Realizadas</th>
-              <th>Canceladas</th>
-              <th>Não compareceu</th>
+              <th style={{ ...sticky }} />
+              {linhas.map((l) => (
+                <th
+                  key={l.iso}
+                  style={{ textAlign: 'center', padding: '8px 6px', whiteSpace: 'nowrap', background: l.iso === hoje ? 'var(--surface-2, #f7f7fa)' : undefined }}
+                >
+                  {l.iso.slice(8, 10)}/{mesCurto}
+                </th>
+              ))}
+              <th style={{ textAlign: 'center' }}>Total</th>
             </tr>
           </thead>
           <tbody>
-            {linhas.map((l) => (
-              <tr key={l.iso} style={l.iso === hoje ? { background: 'var(--surface-2, #f7f7fa)' } : undefined}>
-                <td className="row-title">
-                  {DIA_SEMANA_LABEL[l.weekday]} · {fmtData(l.iso)}
-                  {l.iso === hoje ? ' (hoje)' : ''}
+            {indicadores.map((ind) => (
+              <tr key={ind.chave}>
+                <td className="row-title" style={{ ...sticky }}>
+                  {ind.rotulo}
                 </td>
-                {souAdmin ? <td>{celula(l.chamados)}</td> : null}
-                <td>{celula(l.agendadas)}</td>
-                <td>{celula(l.realizadas)}</td>
-                <td>{celula(l.canceladas)}</td>
-                <td>{celula(l.naoCompareceu)}</td>
+                {linhas.map((l) => celula(l[ind.chave], l.iso === hoje ? { background: 'var(--surface-2, #f7f7fa)' } : undefined))}
+                {celula(total(ind.chave), { fontWeight: 700 })}
               </tr>
             ))}
           </tbody>
-          <tfoot>
-            <tr>
-              <td className="row-title">Total do mês</td>
-              {souAdmin ? <td className="row-title">{total('chamados')}</td> : null}
-              <td className="row-title">{total('agendadas')}</td>
-              <td className="row-title">{total('realizadas')}</td>
-              <td className="row-title">{total('canceladas')}</td>
-              <td className="row-title">{total('naoCompareceu')}</td>
-            </tr>
-          </tfoot>
         </table>
       </div>
     </div>
@@ -809,7 +811,7 @@ function montarLinhasMes(mes, entrevistas, eventosChamados) {
       iso,
       weekday: new Date(Date.UTC(ano, mesNum - 1, i + 1)).getUTCDay(),
       chamados: chamadosPorDia.get(iso)?.size || 0,
-      agendadas: doDia.filter(ehFutura).length,
+      agendadas: doDia.length,
       realizadas: doDia.filter((e) => e.status === 'realizada').length,
       canceladas: doDia.filter((e) => e.status === 'cancelada').length,
       naoCompareceu: doDia.filter((e) => e.status === 'nao_compareceu').length,
