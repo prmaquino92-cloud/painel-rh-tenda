@@ -178,3 +178,34 @@ alter table bloqueios enable row level security;
 alter table google_tokens enable row level security;
 alter table leads enable row level security;
 alter table lead_eventos enable row level security;
+
+-- Questionários para gerentes (modelos + links individuais de resposta)
+create table if not exists questionarios (
+  id uuid primary key default gen_random_uuid(),
+  titulo text not null,
+  descricao text,
+  tipo text not null default 'geral', -- 'geral' | 'individual'
+  perguntas jsonb not null default '[]',
+  criado_em timestamptz not null default now(),
+  atualizado_em timestamptz not null default now()
+);
+
+create table if not exists questionario_envios (
+  id uuid primary key default gen_random_uuid(),
+  questionario_id uuid not null references questionarios(id) on delete cascade,
+  pessoa_id uuid references pessoas(id) on delete set null,
+  token text not null unique,
+  status text not null default 'pendente', -- 'pendente' | 'respondido'
+  perguntas jsonb not null default '[]',    -- cópia das perguntas no momento do envio
+  respostas jsonb,
+  origem text not null default 'link',      -- 'link' | 'importado'
+  enviado_em timestamptz not null default now(),
+  respondido_em timestamptz
+);
+
+create index if not exists idx_q_envios_questionario on questionario_envios(questionario_id);
+create index if not exists idx_q_envios_pessoa on questionario_envios(pessoa_id);
+create index if not exists idx_q_envios_token on questionario_envios(token);
+
+alter table questionarios enable row level security;
+alter table questionario_envios enable row level security;

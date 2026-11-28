@@ -23,6 +23,7 @@ const NAV_ADMIN = [
       { id: 'candidatos', label: 'Candidatos', href: '/app/candidatos', icon: 'candidate' },
       { id: 'agenda', label: 'Agenda de entrevistas', href: '/app/agenda', icon: 'calendar' },
       { id: 'relatorios', label: 'Relatórios', href: '/app/relatorios', icon: 'report' },
+      { id: 'questionarios', label: 'Questionários gerentes', href: '/app/questionarios', icon: 'clipboard' },
     ],
   },
   {
