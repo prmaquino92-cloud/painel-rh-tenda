@@ -5,12 +5,9 @@ import { getEntrevistasAgendadas, getCandidatosComEntrevista, getLeads, getVagas
 import { fmtData, agoraSaoPaulo, ORIGEM_LABEL, ORIGEM_ORDEM, PAPEL_LABEL } from '../../lib/domain';
 import {
   MES_LABEL,
-  addDias,
-  inicioSemana,
   fimDoMes,
   mesAnterior,
   mesSeguinte,
-  calcularMetricas,
   calcularFunilAgrupado,
   calcularTurnover,
   contratadosEDesligadosDoMes,
@@ -27,51 +24,6 @@ function Tile({ label, value, sub }) {
       <div className="value num">{value}</div>
       {sub ? <div className="sub">{sub}</div> : null}
     </div>
-  );
-}
-
-function Bloco({ titulo, periodoLabel, metricas, hrefAnterior, hrefAtual, hrefSeguinte }) {
-  return (
-    <>
-      <div className="section-head" style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <div>
-          <h2>{titulo}</h2>
-          <p>{periodoLabel}</p>
-        </div>
-        <div className="no-print" style={{ display: 'flex', gap: 6 }}>
-          <Link href={hrefAnterior} className="btn btn-outline btn-sm">
-            ← Anterior
-          </Link>
-          <Link href={hrefAtual} className="btn btn-ghost btn-sm">
-            Atual
-          </Link>
-          <Link href={hrefSeguinte} className="btn btn-outline btn-sm">
-            Seguinte →
-          </Link>
-        </div>
-      </div>
-      <div className="grid grid-3" style={{ marginBottom: 8 }}>
-        <Tile label="Entrevistas" value={metricas.total} sub={`1ª etapa: ${metricas.rodada1} · 2ª etapa: ${metricas.rodada2}`} />
-        <Tile label="Realizadas" value={metricas.realizadas} sub={`${fmtPct(metricas.taxaRealizacao)} de comparecimento`} />
-        <Tile label="Não realizadas" value={metricas.naoRealizadas} sub="Canceladas ou não compareceu" />
-        <Tile
-          label="Aprovados p/ 2ª etapa"
-          value={metricas.aprovadosSegundaEtapa}
-          sub={`${fmtPct(metricas.taxaAprovacaoSegundaEtapa)} das realizadas`}
-        />
-        <Tile label="Descartados" value={metricas.descartados} />
-        <Tile label="Contratações" value={metricas.contratacoes} sub={`${fmtPct(metricas.taxaContratacao)} das realizadas`} />
-      </div>
-      {metricas.semAtualizar > 0 ? (
-        <div className="note" style={{ marginBottom: 16 }}>
-          {metricas.semAtualizar} entrevista{metricas.semAtualizar > 1 ? 's' : ''} desse período já passou da data e ainda está
-          {metricas.semAtualizar > 1 ? 'ão' : ''} marcada{metricas.semAtualizar > 1 ? 's' : ''} como "agendada" — vale atualizar na Agenda
-          (realizada, não compareceu ou cancelada) pra esses números ficarem exatos.
-        </div>
-      ) : (
-        <div style={{ marginBottom: 16 }} />
-      )}
-    </>
   );
 }
 
@@ -314,7 +266,6 @@ const LEGENDA_PERIODO =
   'leads e candidaturas contados por quando entraram no painel; entrevistados e aprovados, pela data da entrevista; contratados e descartados, por quando o status mudou.';
 
 export default function Relatorios({
-  semana,
   mes,
   origemAtual,
   funilPorOrigem,
@@ -346,12 +297,11 @@ export default function Relatorios({
       </div>
 
       <p style={{ fontSize: 12.8, color: 'var(--ink-soft)', maxWidth: 620, marginBottom: 14 }}>
-        Produção de recrutamento: volume de entrevistas, taxa de realização, o que avançou no funil e o desempenho por origem, vaga e equipe —
-        visão semanal e mensal. Navegue entre períodos com os botões acima de cada bloco.
+        Produção de recrutamento: entrevistas por semana e no mês, o que avançou no funil e o desempenho por origem, vaga e equipe.
+        Navegue entre os meses com os botões ao lado da tabela semanal.
       </p>
 
       <form method="GET" className="toolbar no-print" style={{ marginBottom: 18 }}>
-        <input type="hidden" name="semana" value={semana.inicio} />
         <input type="hidden" name="mes" value={mes.mesIso} />
         <label style={{ fontSize: 12.6, color: 'var(--ink-soft)', fontWeight: 600 }}>Filtrar por origem:</label>
         <select name="origem" defaultValue={origemAtual || 'todas'} onChange={(e) => e.target.form.requestSubmit()}>
@@ -375,31 +325,24 @@ export default function Relatorios({
         </span>
       </form>
 
-      <Bloco
-        titulo="Semana"
-        periodoLabel={`${fmtData(semana.inicio)} – ${fmtData(semana.fim)}`}
-        metricas={semana.metricas}
-        hrefAnterior={`/app/relatorios?semana=${semana.anteriorAnchor}&mes=${mes.mesIso}${origemAtual ? `&origem=${origemAtual}` : ''}`}
-        hrefAtual={`/app/relatorios${origemAtual ? `?origem=${origemAtual}` : ''}`}
-        hrefSeguinte={`/app/relatorios?semana=${semana.seguinteAnchor}&mes=${mes.mesIso}${origemAtual ? `&origem=${origemAtual}` : ''}`}
-      />
-
-      <Bloco
-        titulo="Mês"
-        periodoLabel={mesLabel}
-        metricas={mes.metricas}
-        hrefAnterior={`/app/relatorios?semana=${semana.inicio}&mes=${mes.mesAnteriorIso}${origemAtual ? `&origem=${origemAtual}` : ''}`}
-        hrefAtual={`/app/relatorios${origemAtual ? `?origem=${origemAtual}` : ''}`}
-        hrefSeguinte={`/app/relatorios?semana=${semana.inicio}&mes=${mes.mesSeguinteIso}${origemAtual ? `&origem=${origemAtual}` : ''}`}
-      />
-
-      <div className="section-head">
+      <div className="section-head" style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
         <div>
           <h2>Semana a semana</h2>
           <p>
             {mesLabel} — cada coluna é uma semana (segunda a domingo); a última coluna é o mês inteiro
             {origemAtual ? ` — ${ORIGEM_LABEL[origemAtual]}` : ''}
           </p>
+        </div>
+        <div className="no-print" style={{ display: 'flex', gap: 6 }}>
+          <Link href={`/app/relatorios?mes=${mes.mesAnteriorIso}${origemAtual ? `&origem=${origemAtual}` : ''}`} className="btn btn-outline btn-sm">
+            ← Anterior
+          </Link>
+          <Link href={`/app/relatorios${origemAtual ? `?origem=${origemAtual}` : ''}`} className="btn btn-ghost btn-sm">
+            Atual
+          </Link>
+          <Link href={`/app/relatorios?mes=${mes.mesSeguinteIso}${origemAtual ? `&origem=${origemAtual}` : ''}`} className="btn btn-outline btn-sm">
+            Seguinte →
+          </Link>
         </div>
       </div>
       <TabelaSemanal colunas={tabelaSemanas} />
@@ -521,17 +464,10 @@ export async function getServerSideProps(context) {
 
   const origemAtual = typeof context.query.origem === 'string' && ORIGEM_ORDEM.includes(context.query.origem) ? context.query.origem : null;
 
-  // semana: ?semana=<qualquer-data-YYYY-MM-DD-dentro-da-semana>
-  const semanaAnchor = typeof context.query.semana === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(context.query.semana) ? context.query.semana : hojeIso;
-  const semanaInicio = inicioSemana(semanaAnchor);
-  const semanaFim = addDias(semanaInicio, 6);
-  const metricasSemana = calcularMetricas({ entrevistas, candidatos, inicio: semanaInicio, fim: semanaFim, hojeIso, origem: origemAtual });
-
   // mês: ?mes=YYYY-MM
   const mesIso = typeof context.query.mes === 'string' && /^\d{4}-\d{2}$/.test(context.query.mes) ? context.query.mes : hojeIso.slice(0, 7);
   const mesInicio = `${mesIso}-01`;
   const mesFim = fimDoMes(mesIso);
-  const metricasMes = calcularMetricas({ entrevistas, candidatos, inicio: mesInicio, fim: mesFim, hojeIso, origem: origemAtual });
 
   // Dia a dia do mês — mesmo recorte da tela: origem escolhida e, pro gerente, só as vagas dele
   // (leads e entrevistas já vêm filtrados acima).
@@ -609,16 +545,8 @@ export async function getServerSideProps(context) {
 
   return {
     props: {
-      semana: {
-        inicio: semanaInicio,
-        fim: semanaFim,
-        metricas: metricasSemana,
-        anteriorAnchor: addDias(semanaInicio, -7),
-        seguinteAnchor: addDias(semanaInicio, 7),
-      },
       mes: {
         mesIso,
-        metricas: metricasMes,
         mesAnteriorIso: mesAnterior(mesIso),
         mesSeguinteIso: mesSeguinte(mesIso),
       },
