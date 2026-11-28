@@ -16,9 +16,9 @@ import {
   contratadosEDesligadosDoMes,
   pct,
   fmtPct,
-  montarLinhasMes,
+  montarTabelaSemanal,
 } from '../../lib/relatorios';
-import TabelaMensal from '../../components/TabelaMensal';
+import TabelaSemanal from '../../components/TabelaSemanal';
 
 function Tile({ label, value, sub }) {
   return (
@@ -329,8 +329,7 @@ export default function Relatorios({
   turnover,
   contratadosDesligados,
   geradoEm,
-  tabelaDias,
-  hoje,
+  tabelaSemanas,
   usuario,
 }) {
   const mesLabel = `${MES_LABEL[Number(mes.mesIso.slice(5, 7)) - 1]} de ${mes.mesIso.slice(0, 4)}`;
@@ -396,14 +395,14 @@ export default function Relatorios({
 
       <div className="section-head">
         <div>
-          <h2>Dia a dia</h2>
+          <h2>Semana a semana</h2>
           <p>
-            {mesLabel} — leads chamados e situação das entrevistas em cada dia
+            {mesLabel} — cada coluna é uma semana (segunda a domingo); a última coluna é o mês inteiro
             {origemAtual ? ` — ${ORIGEM_LABEL[origemAtual]}` : ''}
           </p>
         </div>
       </div>
-      <TabelaMensal mes={mes.mesIso} linhas={tabelaDias} hoje={hoje} mostrarLeads />
+      <TabelaSemanal colunas={tabelaSemanas} />
 
       <div className="section-head">
         <div>
@@ -538,10 +537,12 @@ export async function getServerSideProps(context) {
   // (leads e entrevistas já vêm filtrados acima).
   const eventosChamados = await getLeadsChamadosDoMes(mesIso);
   const leadIdsDoRecorte = new Set(leads.filter((l) => !origemAtual || l.origem === origemAtual).map((l) => l.id));
-  const tabelaDias = montarLinhasMes({
+  const tabelaSemanas = montarTabelaSemanal({
     mes: mesIso,
     entrevistas: entrevistas.filter((e) => !origemAtual || e.candidatos?.origem === origemAtual),
+    candidatos: candidatos.filter((c) => !origemAtual || c.origem === origemAtual),
     eventosChamados: eventosChamados.filter((ev) => leadIdsDoRecorte.has(ev.lead_id)),
+    hojeIso,
   });
 
   // Por origem — chaves fixas (ORIGEM_ORDEM), toda lead/candidato sempre tem uma.
@@ -634,8 +635,7 @@ export async function getServerSideProps(context) {
       turnover,
       contratadosDesligados,
       geradoEm,
-      tabelaDias,
-      hoje: hojeIso,
+      tabelaSemanas,
       usuario,
     },
   };
